@@ -1,0 +1,149 @@
+<script type="text/javascript">
+    RED.nodes.registerType('express-logger', {
+        category: 'network',
+        color: '#a6bbcf',
+        defaults: {
+            name: { value: "" },
+            logLevel: { value: "combined" },
+            includeHeaders: { value: false },
+            includeBody: { value: false },
+            maxBodySize: { value: 1024, validate: RED.validators.number() },
+            filterPaths: { value: "" },
+            outputToDebug: { value: true },
+            outputToFlow: { value: false }
+        },
+        inputs: 0,
+        outputs: 1,
+        icon: "white-globe.png",
+        label: function() {
+            return this.name || "Express Logger";
+        },
+        labelStyle: function() {
+            return this.name ? "node_label_italic" : "";
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="express-logger">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Express Logger">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-logLevel"><i class="fa fa-list"></i> Log Format</label>
+        <select id="node-input-logLevel">
+            <option value="combined">Combined (Apache combined log format)</option>
+            <option value="common">Common (Apache common log format)</option>
+            <option value="dev">Dev (Concise colored output for development)</option>
+            <option value="short">Short</option>
+            <option value="tiny">Tiny</option>
+            <option value="custom">Custom (Detailed Node-RED format)</option>
+        </select>
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-includeHeaders"><i class="fa fa-header"></i> Include Headers</label>
+        <input type="checkbox" id="node-input-includeHeaders" style="display: inline-block; width: auto; vertical-align: top;">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-includeBody"><i class="fa fa-file-text-o"></i> Include Request Body</label>
+        <input type="checkbox" id="node-input-includeBody" style="display: inline-block; width: auto; vertical-align: top;">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-maxBodySize"><i class="fa fa-database"></i> Max Body Size (bytes)</label>
+        <input type="number" id="node-input-maxBodySize" placeholder="1024">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-filterPaths"><i class="fa fa-filter"></i> Filter Paths</label>
+        <input type="text" id="node-input-filterPaths" placeholder="e.g., /debug,/settings (comma-separated)">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-outputToDebug"><i class="fa fa-bug"></i> Output to Debug Panel</label>
+        <input type="checkbox" id="node-input-outputToDebug" style="display: inline-block; width: auto; vertical-align: top;">
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-outputToFlow"><i class="fa fa-arrow-right"></i> Output to Flow</label>
+        <input type="checkbox" id="node-input-outputToFlow" style="display: inline-block; width: auto; vertical-align: top;">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="express-logger">
+    <p>A node that provides detailed logging of the Express web server used by Node-RED's editor UI, with enhanced monitoring for debugging automatic refreshes.</p>
+    
+    <h3>Refresh Monitoring Features</h3>
+    <p>This node includes specialized monitoring to help debug automatic browser refreshes:</p>
+    <ul>
+        <li><strong>Editor Request Detection</strong> - Identifies requests to Node-RED editor vs static assets</li>
+        <li><strong>Dashboard Request Monitoring</strong> - Tracks dashboard-specific traffic</li>
+        <li><strong>Cache Control Analysis</strong> - Detects forced refresh headers (no-cache, pragma)</li>
+        <li><strong>Connection Monitoring</strong> - Logs connection drops and timeouts</li>
+        <li><strong>Server Event Tracking</strong> - Monitors server close/error events</li>
+        <li><strong>Node-RED Runtime Events</strong> - Tracks flows start/stop, node additions/removals</li>
+        <li><strong>Memory Usage Alerts</strong> - Warns about high memory usage that might cause issues</li>
+        <li><strong>WebSocket Monitoring</strong> - Tracks Socket.IO events that might trigger refreshes</li>
+        <li><strong>Authentication Failures</strong> - Logs auth errors that could cause redirects</li>
+        <li><strong>Slow Response Detection</strong> - Identifies timeouts that might trigger refreshes</li>
+    </ul>
+    
+    <h3>Configuration</h3>
+    <dl class="message-properties">
+        <dt>Log Format <span class="property-type">string</span></dt>
+        <dd>The format for logging HTTP requests. Choose from standard formats or custom detailed logging.</dd>
+        
+        <dt>Include Headers <span class="property-type">boolean</span></dt>
+        <dd>Whether to include HTTP headers in the log output.</dd>
+        
+        <dt>Include Request Body <span class="property-type">boolean</span></dt>
+        <dd>Whether to include the request body in the log output (useful for POST/PUT requests).</dd>
+        
+        <dt>Max Body Size <span class="property-type">number</span></dt>
+        <dd>Maximum size in bytes of the request body to log (prevents large payloads from flooding logs).</dd>
+        
+        <dt>Filter Paths <span class="property-type">string</span></dt>
+        <dd>Comma-separated list of URL paths to exclude from logging (e.g., static assets, health checks).</dd>
+        
+        <dt>Output to Debug Panel <span class="property-type">boolean</span></dt>
+        <dd>Send log messages to the Node-RED debug panel.</dd>
+        
+        <dt>Output to Flow <span class="property-type">boolean</span></dt>
+        <dd>Send log data as messages to the node's output for further processing.</dd>
+    </dl>
+    
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>When "Output to Flow" is enabled, outputs an object containing:
+            <ul>
+                <li><code>method</code> - HTTP method (GET, POST, etc.)</li>
+                <li><code>url</code> - Request URL</li>
+                <li><code>statusCode</code> - HTTP response status code</li>
+                <li><code>responseTime</code> - Response time in milliseconds</li>
+                <li><code>userAgent</code> - User agent string</li>
+                <li><code>ip</code> - Client IP address</li>
+                <li><code>headers</code> - Request headers (if enabled)</li>
+                <li><code>body</code> - Request body (if enabled)</li>
+                <li><code>timestamp</code> - ISO timestamp of the request</li>
+            </ul>
+        </dd>
+    </dl>
+    
+    <h3>Details</h3>
+    <p>This node intercepts and logs all HTTP requests made to the Node-RED Express server, including:</p>
+    <ul>
+        <li>Editor UI requests</li>
+        <li>API calls to Node-RED runtime</li>
+        <li>Static file requests</li>
+        <li>WebSocket upgrade requests</li>
+        <li>Custom HTTP nodes endpoints</li>
+    </ul>
+    
+    <p>The logging is implemented using middleware that captures request/response data without interfering with normal Node-RED operation.</p>
+    
+    <p><strong>Note:</strong> This node must be deployed to start logging. Only one instance should be used per Node-RED instance to avoid duplicate logs.</p>
+</script>

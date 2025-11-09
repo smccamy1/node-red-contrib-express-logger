@@ -1,0 +1,35 @@
+{
+  "name": "node-red-contrib-express-logger",
+  "version": "1.0.0",
+  "description": "A comprehensive Node-RED node for detailed HTTP logging with enhanced refresh detection and debugging capabilities",
+  "main": "express-logger.js",
+  "keywords": [
+    "node-red",
+    "express",
+    "logging",
+    "monitoring",
+    "webserver",
+    "debugging",
+    "refresh",
+    "dashboard",
+    "http"
+  ],
+  "node-red": {
+    "nodes": {
+      "express-logger": "express-logger.js"
+    }
+  },
+  "author": "Stephen",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/node-red-contrib-express-logger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/node-red-contrib-express-logger/issues"
+  },
+  "homepage": "https://github.com/yourusername/node-red-contrib-express-logger#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
