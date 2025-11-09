@@ -23,12 +23,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/node-red-contrib-express-logger.git"
+    "url": "https://github.com/smccamy1/node-red-contrib-express-logger.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/node-red-contrib-express-logger/issues"
+    "url": "https://github.com/smccamy1/node-red-contrib-express-logger/issues"
   },
-  "homepage": "https://github.com/yourusername/node-red-contrib-express-logger#readme",
+  "homepage": "https://github.com/smccamy1/node-red-contrib-express-logger#readme",
   "engines": {
     "node": ">=14.0.0"
   }

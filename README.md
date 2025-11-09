@@ -4,7 +4,7 @@ A comprehensive Node-RED custom node for detailed HTTP logging of the Express we
 
 ![Node-RED Express Logger](https://img.shields.io/badge/Node--RED-contrib-red?style=flat-square)
 ![npm version](https://img.shields.io/npm/v/node-red-contrib-express-logger?style=flat-square)
-![License](https://img.shields.io/github/license/yourusername/node-red-contrib-express-logger?style=flat-square)
+![License](https://img.shields.io/github/license/smccamy1/node-red-contrib-express-logger?style=flat-square)
 
 ## 🎯 **Key Features**
 
@@ -66,7 +66,7 @@ npm install /path/to/node-red-contrib-express-logger-1.0.0.tgz
 
 ### **Option 3: Development Installation**
 ```bash
-git clone https://github.com/yourusername/node-red-contrib-express-logger.git
+git clone https://github.com/smccamy1/node-red-contrib-express-logger.git
 cd node-red-contrib-express-logger
 npm pack
 cd ~/.node-red
@@ -184,8 +184,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🐛 **Issues & Support**
 
-- **Bug Reports**: [GitHub Issues](https://github.com/yourusername/node-red-contrib-express-logger/issues)
-- **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/node-red-contrib-express-logger/discussions)
+- **Bug Reports**: [GitHub Issues](https://github.com/smccamy1/node-red-contrib-express-logger/issues)
+- **Feature Requests**: [GitHub Discussions](https://github.com/smccamy1/node-red-contrib-express-logger/discussions)
 - **Node-RED Forum**: [Node-RED Community](https://discourse.nodered.org/)
 
 ## 📈 **Changelog**
