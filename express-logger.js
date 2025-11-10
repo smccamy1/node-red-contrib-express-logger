@@ -13,9 +13,135 @@ module.exports = function(RED) {
         this.filterPaths = config.filterPaths ? config.filterPaths.split(',').map(p => p.trim()) : [];
         this.outputToDebug = config.outputToDebug !== false; // Default true
         this.outputToFlow = config.outputToFlow || false;
+        this.saveToFile = config.saveToFile || false;
+        this.logFilePath = config.logFilePath || '';
+        this.enableCsvExport = config.enableCsvExport || false;
+        this.csvExportPath = config.csvExportPath || '';
+        this.maxLogFileSize = parseInt(config.maxLogFileSize) || 10; // MB
+        this.logRotation = config.logRotation !== false; // Default true
         
         // Store original body for logging
         let requestBodies = new Map();
+        
+        // File system modules for logging
+        const fs = require('fs');
+        const path = require('path');
+        
+        // CSV log storage for export
+        let csvLogEntries = [];
+        const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'hasRefreshIndicators', 'connectionIssues'];
+        
+        // File logging functions
+        function ensureLogDirectory(filePath) {
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+        }
+        
+        function rotateLogFile(filePath) {
+            if (!fs.existsSync(filePath)) return;
+            
+            const stats = fs.statSync(filePath);
+            const fileSizeMB = stats.size / (1024 * 1024);
+            
+            if (fileSizeMB >= node.maxLogFileSize) {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const ext = path.extname(filePath);
+                const basename = path.basename(filePath, ext);
+                const dirname = path.dirname(filePath);
+                const rotatedFile = path.join(dirname, `${basename}-${timestamp}${ext}`);
+                
+                try {
+                    fs.renameSync(filePath, rotatedFile);
+                    node.log(`Log file rotated: ${rotatedFile}`);
+                } catch (err) {
+                    node.error(`Failed to rotate log file: ${err.message}`);
+                }
+            }
+        }
+        
+        function writeToLogFile(message) {
+            if (!node.saveToFile || !node.logFilePath) return;
+            
+            try {
+                const logFilePath = node.logFilePath;
+                ensureLogDirectory(logFilePath);
+                
+                if (node.logRotation) {
+                    rotateLogFile(logFilePath);
+                }
+                
+                const timestamp = new Date().toISOString();
+                const logEntry = `[${timestamp}] ${message}\n`;
+                
+                fs.appendFileSync(logFilePath, logEntry, 'utf8');
+            } catch (err) {
+                node.error(`Failed to write to log file: ${err.message}`);
+            }
+        }
+        
+        function addToCsvLog(logData) {
+            if (!node.enableCsvExport) return;
+            
+            const csvEntry = {
+                timestamp: logData.timestamp || new Date().toISOString(),
+                method: logData.method || '',
+                url: logData.url || '',
+                statusCode: logData.statusCode || '',
+                responseTime: logData.responseTime || '',
+                ip: logData.ip || '',
+                userAgent: (logData.userAgent || '').substring(0, 100), // Limit length
+                isEditorRequest: logData.isEditorRequest || false,
+                isDashboardRequest: logData.isDashboardRequest || false,
+                hasRefreshIndicators: logData.hasRefreshIndicators || false,
+                connectionIssues: logData.connectionIssues || ''
+            };
+            
+            csvLogEntries.push(csvEntry);
+            
+            // Limit memory usage - keep only last 10000 entries
+            if (csvLogEntries.length > 10000) {
+                csvLogEntries = csvLogEntries.slice(-5000); // Keep last 5000
+            }
+        }
+        
+        function exportToCsv() {
+            if (!node.enableCsvExport || !node.csvExportPath || csvLogEntries.length === 0) {
+                return false;
+            }
+            
+            try {
+                ensureLogDirectory(node.csvExportPath);
+                
+                // Create CSV content
+                let csvContent = csvHeaders.join(',') + '\n';
+                
+                csvLogEntries.forEach(entry => {
+                    const row = csvHeaders.map(header => {
+                        let value = entry[header] || '';
+                        // Escape commas and quotes in CSV
+                        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+                            value = '"' + value.replace(/"/g, '""') + '"';
+                        }
+                        return value;
+                    });
+                    csvContent += row.join(',') + '\n';
+                });
+                
+                // Write to file with timestamp
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const csvFileName = `node-red-http-logs-${timestamp}.csv`;
+                const fullPath = path.resolve(node.csvExportPath, csvFileName);
+                
+                fs.writeFileSync(fullPath, csvContent, 'utf8');
+                node.log(`CSV export completed: ${fullPath} (${csvLogEntries.length} entries)`);
+                return fullPath;
+            } catch (err) {
+                node.error(`Failed to export CSV: ${err.message}`);
+                return false;
+            }
+        }
         
         // Format log message based on log level
         function formatLogMessage(req, res, responseTime) {
@@ -54,6 +180,9 @@ module.exports = function(RED) {
                     return msg;
             }
         }
+        
+        // Expose the exportToCsv function as a node method
+        node.exportToCsv = exportToCsv;
         
         // Middleware to capture request body
         const bodyCapture = function(req, res, next) {
@@ -286,20 +415,26 @@ module.exports = function(RED) {
                                     
                                     console.log("EXPRESS LOGGER (DIRECT):", logMessage);
                                     
+                                    // Write to log file if enabled
+                                    writeToLogFile(`DIRECT: ${logMessage}`);
+                                    
                                     // Log potential refresh triggers
                                     if (res.statusCode >= 400) {
                                         console.log("EXPRESS LOGGER: ERROR RESPONSE:", res.statusCode, req.url);
                                         node.warn(`Error response ${res.statusCode} for ${req.url} - may trigger refresh`);
+                                        writeToLogFile(`ERROR RESPONSE: ${res.statusCode} ${req.url} - may trigger refresh`);
                                     }
                                     
                                     if (responseConnection && responseConnection.toLowerCase().includes('close')) {
                                         console.log("EXPRESS LOGGER: RESPONSE FORCES CONNECTION CLOSE:", req.url);
                                         node.warn(`Response forces connection close: ${req.url}`);
+                                        writeToLogFile(`CONNECTION CLOSE FORCED: ${req.url}`);
                                     }
                                     
                                     if (isEditorRequest && res.statusCode === 200 && responseTime > 5000) {
                                         console.log("EXPRESS LOGGER: SLOW EDITOR RESPONSE:", responseTime + "ms", req.url);
                                         node.warn(`Slow editor response ${responseTime}ms for ${req.url} - may cause timeout refresh`);
+                                        writeToLogFile(`SLOW RESPONSE: ${responseTime}ms ${req.url} - may cause timeout refresh`);
                                     }
                                     
                                     if (node.outputToDebug) {
@@ -322,9 +457,30 @@ module.exports = function(RED) {
                                             responseConnection: responseConnection,
                                             cacheControl: cacheControl,
                                             responseCacheControl: responseCacheControl,
-                                            hasRefreshIndicators: !!(cacheControl === 'no-cache' || pragma === 'no-cache' || res.statusCode >= 400)
+                                            hasRefreshIndicators: !!(cacheControl === 'no-cache' || pragma === 'no-cache' || res.statusCode >= 400),
+                                            connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
                                         };
+                                        
+                                        // Add to CSV log
+                                        addToCsvLog(logData);
+                                        
                                         node.send({ payload: logData });
+                                    } else if (node.enableCsvExport) {
+                                        // Still add to CSV even if not outputting to flow
+                                        const logData = {
+                                            method: req.method,
+                                            url: req.url,
+                                            statusCode: res.statusCode,
+                                            responseTime: responseTime,
+                                            ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
+                                            userAgent: req.headers ? req.headers['user-agent'] : undefined,
+                                            timestamp: new Date().toISOString(),
+                                            isEditorRequest: isEditorRequest,
+                                            isDashboardRequest: isDashboardRequest,
+                                            hasRefreshIndicators: !!(cacheControl === 'no-cache' || pragma === 'no-cache' || res.statusCode >= 400),
+                                            connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
+                                        };
+                                        addToCsvLog(logData);
                                     }
                                 } catch (err) {
                                     console.error("EXPRESS LOGGER DIRECT ERROR:", err);
@@ -564,4 +720,23 @@ module.exports = function(RED) {
     }
     
     RED.nodes.registerType("express-logger", ExpressLoggerNode);
+    
+    // HTTP endpoint for CSV export
+    RED.httpAdmin.post("/express-logger/:id/export-csv", RED.auth.needsPermission('express-logger.write'), function(req, res) {
+        const node = RED.nodes.getNode(req.params.id);
+        if (!node) {
+            return res.status(404).json({ success: false, error: "Node not found" });
+        }
+        
+        try {
+            const result = node.exportToCsv();
+            if (result.success) {
+                res.json({ success: true, filePath: result.filePath, recordCount: result.recordCount });
+            } else {
+                res.json({ success: false, error: result.error });
+            }
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
 };

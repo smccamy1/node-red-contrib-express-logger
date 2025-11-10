@@ -10,7 +10,13 @@
             maxBodySize: { value: 1024, validate: RED.validators.number() },
             filterPaths: { value: "" },
             outputToDebug: { value: true },
-            outputToFlow: { value: false }
+            outputToFlow: { value: false },
+            saveToFile: { value: false },
+            logFilePath: { value: "" },
+            maxLogFileSize: { value: 10, validate: RED.validators.number() },
+            logRotation: { value: true },
+            enableCsvExport: { value: false },
+            csvExportPath: { value: "" }
         },
         inputs: 0,
         outputs: 1,
@@ -20,6 +26,64 @@
         },
         labelStyle: function() {
             return this.name ? "node_label_italic" : "";
+        },
+        oneditprepare: function() {
+            const node = this;
+            
+            // Toggle file logging options visibility
+            function toggleFileLoggingOptions() {
+                const saveToFile = $("#node-input-saveToFile").is(':checked');
+                if (saveToFile) {
+                    $("#file-logging-options").show();
+                } else {
+                    $("#file-logging-options").hide();
+                }
+            }
+            
+            // Toggle CSV export options visibility
+            function toggleCsvExportOptions() {
+                const enableCsv = $("#node-input-enableCsvExport").is(':checked');
+                if (enableCsv) {
+                    $("#csv-export-options").show();
+                } else {
+                    $("#csv-export-options").hide();
+                }
+            }
+            
+            // Set up event handlers
+            $("#node-input-saveToFile").change(toggleFileLoggingOptions);
+            $("#node-input-enableCsvExport").change(toggleCsvExportOptions);
+            
+            // Initial state
+            toggleFileLoggingOptions();
+            toggleCsvExportOptions();
+            
+            // CSV Export button handler
+            $("#export-csv-btn").click(function() {
+                const button = $(this);
+                button.prop('disabled', true);
+                button.html('<i class="fa fa-spinner fa-spin"></i> Exporting...');
+                
+                // Send request to node to export CSV
+                $.ajax({
+                    url: "express-logger/" + node.id + "/export-csv",
+                    type: "POST",
+                    success: function(data) {
+                        button.prop('disabled', false);
+                        button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
+                        if (data.success) {
+                            RED.notify("CSV exported successfully to: " + data.filePath, "success");
+                        } else {
+                            RED.notify("Export failed: " + (data.error || "Unknown error"), "error");
+                        }
+                    },
+                    error: function() {
+                        button.prop('disabled', false);
+                        button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
+                        RED.notify("Export request failed", "error");
+                    }
+                });
+            });
         }
     });
 </script>
@@ -71,6 +135,57 @@
         <label for="node-input-outputToFlow"><i class="fa fa-arrow-right"></i> Output to Flow</label>
         <input type="checkbox" id="node-input-outputToFlow" style="display: inline-block; width: auto; vertical-align: top;">
     </div>
+    
+    <hr style="margin: 15px 0;">
+    <h4 style="margin-bottom: 10px; color: #666;">File Logging</h4>
+    
+    <div class="form-row">
+        <label for="node-input-saveToFile"><i class="fa fa-file-text"></i> Save to File</label>
+        <input type="checkbox" id="node-input-saveToFile" style="display:inline-block; width:auto; vertical-align:top;">
+    </div>
+    
+    <div class="form-row" id="file-logging-options" style="margin-left: 20px;">
+        <div class="form-row">
+            <label for="node-input-logFilePath" style="width: 120px;"><i class="fa fa-folder"></i> Log File Path</label>
+            <input type="text" id="node-input-logFilePath" placeholder="/path/to/logfile.log" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Default: ./logs/express-logger.log</div>
+        </div>
+        
+        <div class="form-row">
+            <label for="node-input-maxLogFileSize" style="width: 120px;"><i class="fa fa-database"></i> Max File Size (MB)</label>
+            <input type="number" id="node-input-maxLogFileSize" placeholder="10" min="1" max="1000" style="width: 100px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Rotate log when file exceeds this size</div>
+        </div>
+        
+        <div class="form-row">
+            <label for="node-input-logRotation" style="width: 120px;"><i class="fa fa-refresh"></i> Log Rotation</label>
+            <input type="checkbox" id="node-input-logRotation" style="display:inline-block; width:auto; vertical-align:top;" checked>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Enable automatic log file rotation</div>
+        </div>
+    </div>
+    
+    <hr style="margin: 15px 0;">
+    <h4 style="margin-bottom: 10px; color: #666;">CSV Export</h4>
+    
+    <div class="form-row">
+        <label for="node-input-enableCsvExport"><i class="fa fa-table"></i> Enable CSV Export</label>
+        <input type="checkbox" id="node-input-enableCsvExport" style="display:inline-block; width:auto; vertical-align:top;">
+    </div>
+    
+    <div class="form-row" id="csv-export-options" style="margin-left: 20px;">
+        <div class="form-row">
+            <label for="node-input-csvExportPath" style="width: 120px;"><i class="fa fa-file-excel-o"></i> CSV Export Path</label>
+            <input type="text" id="node-input-csvExportPath" placeholder="/path/to/export/" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Directory for CSV exports (default: ./exports/)</div>
+        </div>
+        
+        <div class="form-row">
+            <button type="button" id="export-csv-btn" class="red-ui-button" style="margin-top: 10px;">
+                <i class="fa fa-download"></i> Export Current Logs to CSV
+            </button>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Export accumulated logs to CSV file</div>
+        </div>
+    </div>
 </script>
 
 <script type="text/html" data-help-name="express-logger">
@@ -113,6 +228,44 @@
         
         <dt>Output to Flow <span class="property-type">boolean</span></dt>
         <dd>Send log data as messages to the node's output for further processing.</dd>
+        
+        <dt>Save to File <span class="property-type">boolean</span></dt>
+        <dd>Whether to save log messages to a file on disk for persistent storage.</dd>
+        
+        <dt>Log File Path <span class="property-type">string</span></dt>
+        <dd>Path to the log file. Default: ./logs/express-logger.log. Directory will be created if it doesn't exist.</dd>
+        
+        <dt>Max File Size (MB) <span class="property-type">number</span></dt>
+        <dd>Maximum size of the log file in megabytes before rotation. Default: 10 MB.</dd>
+        
+        <dt>Log Rotation <span class="property-type">boolean</span></dt>
+        <dd>Whether to enable automatic log file rotation when max size is reached. Rotated files are timestamped.</dd>
+        
+        <dt>Enable CSV Export <span class="property-type">boolean</span></dt>
+        <dd>Whether to enable CSV export functionality for log data analysis.</dd>
+        
+        <dt>CSV Export Path <span class="property-type">string</span></dt>
+        <dd>Directory path for CSV exports. Default: ./exports/. Use the export button in configuration to manually export current logs.</dd>
+    </dl>
+    
+    <h3>File Logging Features</h3>
+    <p>When file logging is enabled, the node provides persistent storage of HTTP request logs:</p>
+    <ul>
+        <li><strong>Automatic Directory Creation</strong> - Log directories are created automatically if they don't exist</li>
+        <li><strong>Log Rotation</strong> - Files are automatically rotated when they exceed the configured size limit</li>
+        <li><strong>Timestamped Rotation</strong> - Rotated files include timestamps for easy identification</li>
+        <li><strong>Error Handling</strong> - File write errors are logged to the Node-RED console</li>
+    </ul>
+    
+    <h3>CSV Export Features</h3>
+    <p>The CSV export functionality enables data analysis and sharing:</p>
+    <ul>
+        <li><strong>Structured Data Export</strong> - Exports structured log data in CSV format</li>
+        <li><strong>Manual Export</strong> - Use the configuration panel button to export current logs</li>
+        <li><strong>Memory Management</strong> - Automatically limits stored entries to prevent memory issues</li>
+        <li><strong>Proper Escaping</strong> - Handles commas, quotes, and newlines in data fields</li>
+        <li><strong>Timestamped Files</strong> - Export files include timestamps in filename</li>
+    </ul>
     </dl>
     
     <h3>Outputs</h3>
@@ -129,6 +282,10 @@
                 <li><code>headers</code> - Request headers (if enabled)</li>
                 <li><code>body</code> - Request body (if enabled)</li>
                 <li><code>timestamp</code> - ISO timestamp of the request</li>
+                <li><code>isEditorRequest</code> - Boolean indicating if this is a Node-RED editor request</li>
+                <li><code>isDashboardRequest</code> - Boolean indicating if this is a dashboard request</li>
+                <li><code>hasRefreshIndicators</code> - Boolean indicating potential refresh triggers</li>
+                <li><code>connectionIssues</code> - String describing any connection-related issues</li>
             </ul>
         </dd>
     </dl>
