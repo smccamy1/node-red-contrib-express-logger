@@ -58,9 +58,14 @@
             toggleFileLoggingOptions();
             toggleCsvExportOptions();
             
+            // Initialize download button state
+            $("#download-csv-btn").hide();
+            
             // CSV Export button handler
             $("#export-csv-btn").click(function() {
                 const button = $(this);
+                const downloadBtn = $("#download-csv-btn");
+                
                 button.prop('disabled', true);
                 button.html('<i class="fa fa-spinner fa-spin"></i> Exporting...');
                 
@@ -72,17 +77,49 @@
                         button.prop('disabled', false);
                         button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
                         if (data.success) {
-                            RED.notify("CSV exported successfully to: " + data.filePath, "success");
+                            RED.notify("CSV exported successfully (" + data.recordCount + " entries)", "success");
+                            
+                            // Enable and show download button
+                            downloadBtn.show();
+                            downloadBtn.prop('disabled', false);
+                            downloadBtn.data('filename', data.fileName);
+                            downloadBtn.find('.download-info').text(data.fileName);
                         } else {
                             RED.notify("Export failed: " + (data.error || "Unknown error"), "error");
+                            downloadBtn.hide();
                         }
                     },
                     error: function() {
                         button.prop('disabled', false);
                         button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
                         RED.notify("Export request failed", "error");
+                        downloadBtn.hide();
                     }
                 });
+            });
+
+            // CSV Download button handler
+            $("#download-csv-btn").click(function() {
+                const button = $(this);
+                const fileName = button.data('filename');
+                
+                if (!fileName) {
+                    RED.notify("No file available for download", "error");
+                    return;
+                }
+                
+                // Create download link
+                const downloadUrl = "express-logger/" + node.id + "/download-csv/" + encodeURIComponent(fileName);
+                
+                // Create a temporary link element and trigger download
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                RED.notify("Download started: " + fileName, "success");
             });
         }
     });
@@ -184,6 +221,13 @@
                 <i class="fa fa-download"></i> Export Current Logs to CSV
             </button>
             <div style="font-size: 11px; color: #666; margin-top: 5px;">Export accumulated logs to CSV file</div>
+        </div>
+
+        <div class="form-row">
+            <button type="button" id="download-csv-btn" class="red-ui-button" style="margin-top: 10px; display: none;">
+                <i class="fa fa-cloud-download"></i> Download Last Export: <span class="download-info"></span>
+            </button>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Download the most recently exported CSV file</div>
         </div>
     </div>
 </script>

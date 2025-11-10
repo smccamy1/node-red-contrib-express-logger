@@ -5,6 +5,10 @@ module.exports = function(RED) {
         RED.nodes.createNode(this, config);
         const node = this;
         
+        // File system modules for logging
+        const fs = require('fs');
+        const path = require('path');
+        
         // Configuration
         this.logLevel = config.logLevel || 'combined';
         this.includeHeaders = config.includeHeaders || false;
@@ -22,10 +26,6 @@ module.exports = function(RED) {
         
         // Store original body for logging
         let requestBodies = new Map();
-        
-        // File system modules for logging
-        const fs = require('fs');
-        const path = require('path');
         
         // CSV log storage for export
         let csvLogEntries = [];
@@ -113,7 +113,11 @@ module.exports = function(RED) {
             
             try {
                 const exportPath = node.csvExportPath;
-                ensureLogDirectory(exportPath);
+                
+                // Ensure export directory exists
+                if (!fs.existsSync(exportPath)) {
+                    fs.mkdirSync(exportPath, { recursive: true });
+                }
                 
                 // Create CSV content
                 let csvContent = csvHeaders.join(',') + '\n';
@@ -137,7 +141,12 @@ module.exports = function(RED) {
                 
                 fs.writeFileSync(fullPath, csvContent, 'utf8');
                 node.log(`CSV export completed: ${fullPath} (${csvLogEntries.length} entries)`);
-                return { success: true, filePath: fullPath, recordCount: csvLogEntries.length };
+                return { 
+                    success: true, 
+                    filePath: fullPath, 
+                    fileName: csvFileName,
+                    recordCount: csvLogEntries.length 
+                };
             } catch (err) {
                 node.error(`Failed to export CSV: ${err.message}`);
                 return { success: false, error: err.message };
@@ -732,10 +741,47 @@ module.exports = function(RED) {
         try {
             const result = node.exportToCsv();
             if (result.success) {
-                res.json({ success: true, filePath: result.filePath, recordCount: result.recordCount });
+                res.json({ 
+                    success: true, 
+                    filePath: result.filePath, 
+                    fileName: result.fileName,
+                    recordCount: result.recordCount 
+                });
             } else {
                 res.json({ success: false, error: result.error });
             }
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // HTTP endpoint for CSV download
+    RED.httpAdmin.get("/express-logger/:id/download-csv/:fileName", RED.auth.needsPermission('express-logger.read'), function(req, res) {
+        const node = RED.nodes.getNode(req.params.id);
+        const fileName = req.params.fileName;
+        
+        if (!node) {
+            return res.status(404).json({ success: false, error: "Node not found" });
+        }
+
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const filePath = path.join(node.csvExportPath, fileName);
+            
+            // Check if file exists and is within the export directory (security check)
+            if (!fs.existsSync(filePath) || !filePath.startsWith(node.csvExportPath)) {
+                return res.status(404).json({ success: false, error: "File not found" });
+            }
+            
+            // Set headers for file download
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+            
+            // Stream the file
+            const fileStream = fs.createReadStream(filePath);
+            fileStream.pipe(res);
+            
         } catch (error) {
             res.status(500).json({ success: false, error: error.message });
         }
