@@ -14,9 +14,9 @@ module.exports = function(RED) {
         this.outputToDebug = config.outputToDebug !== false; // Default true
         this.outputToFlow = config.outputToFlow || false;
         this.saveToFile = config.saveToFile || false;
-        this.logFilePath = config.logFilePath || '';
+        this.logFilePath = config.logFilePath || path.join(RED.settings.userDir, 'logs', 'express-logger.log');
         this.enableCsvExport = config.enableCsvExport || false;
-        this.csvExportPath = config.csvExportPath || '';
+        this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
         this.maxLogFileSize = parseInt(config.maxLogFileSize) || 10; // MB
         this.logRotation = config.logRotation !== false; // Default true
         
@@ -107,12 +107,13 @@ module.exports = function(RED) {
         }
         
         function exportToCsv() {
-            if (!node.enableCsvExport || !node.csvExportPath || csvLogEntries.length === 0) {
-                return false;
+            if (!node.enableCsvExport || csvLogEntries.length === 0) {
+                return { success: false, error: "CSV export not enabled or no data available" };
             }
             
             try {
-                ensureLogDirectory(node.csvExportPath);
+                const exportPath = node.csvExportPath;
+                ensureLogDirectory(exportPath);
                 
                 // Create CSV content
                 let csvContent = csvHeaders.join(',') + '\n';
@@ -132,14 +133,14 @@ module.exports = function(RED) {
                 // Write to file with timestamp
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                 const csvFileName = `node-red-http-logs-${timestamp}.csv`;
-                const fullPath = path.resolve(node.csvExportPath, csvFileName);
+                const fullPath = path.resolve(exportPath, csvFileName);
                 
                 fs.writeFileSync(fullPath, csvContent, 'utf8');
                 node.log(`CSV export completed: ${fullPath} (${csvLogEntries.length} entries)`);
-                return fullPath;
+                return { success: true, filePath: fullPath, recordCount: csvLogEntries.length };
             } catch (err) {
                 node.error(`Failed to export CSV: ${err.message}`);
-                return false;
+                return { success: false, error: err.message };
             }
         }
         

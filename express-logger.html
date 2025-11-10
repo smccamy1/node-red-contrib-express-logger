@@ -147,8 +147,8 @@
     <div class="form-row" id="file-logging-options" style="margin-left: 20px;">
         <div class="form-row">
             <label for="node-input-logFilePath" style="width: 120px;"><i class="fa fa-folder"></i> Log File Path</label>
-            <input type="text" id="node-input-logFilePath" placeholder="/path/to/logfile.log" style="width: 300px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Default: ./logs/express-logger.log</div>
+            <input type="text" id="node-input-logFilePath" placeholder="logs/express-logger.log" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Default: {userDir}/logs/express-logger.log</div>
         </div>
         
         <div class="form-row">
@@ -175,8 +175,8 @@
     <div class="form-row" id="csv-export-options" style="margin-left: 20px;">
         <div class="form-row">
             <label for="node-input-csvExportPath" style="width: 120px;"><i class="fa fa-file-excel-o"></i> CSV Export Path</label>
-            <input type="text" id="node-input-csvExportPath" placeholder="/path/to/export/" style="width: 300px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Directory for CSV exports (default: ./exports/)</div>
+            <input type="text" id="node-input-csvExportPath" placeholder="logs/exports" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Directory for CSV exports (default: {userDir}/logs/exports)</div>
         </div>
         
         <div class="form-row">
@@ -233,7 +233,7 @@
         <dd>Whether to save log messages to a file on disk for persistent storage.</dd>
         
         <dt>Log File Path <span class="property-type">string</span></dt>
-        <dd>Path to the log file. Default: ./logs/express-logger.log. Directory will be created if it doesn't exist.</dd>
+        <dd>Path to the log file. Default: {userDir}/logs/express-logger.log. Directory will be created if it doesn't exist.</dd>
         
         <dt>Max File Size (MB) <span class="property-type">number</span></dt>
         <dd>Maximum size of the log file in megabytes before rotation. Default: 10 MB.</dd>
@@ -245,7 +245,7 @@
         <dd>Whether to enable CSV export functionality for log data analysis.</dd>
         
         <dt>CSV Export Path <span class="property-type">string</span></dt>
-        <dd>Directory path for CSV exports. Default: ./exports/. Use the export button in configuration to manually export current logs.</dd>
+        <dd>Directory path for CSV exports. Default: {userDir}/logs/exports/. Use the export button in configuration to manually export current logs.</dd>
     </dl>
     
     <h3>File Logging Features</h3>
