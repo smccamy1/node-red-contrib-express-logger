@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV Download Diagnostics</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+        button { padding: 8px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .log { max-height: 300px; overflow-y: auto; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSV Download Diagnostics</h1>
+        <p>This page helps diagnose CSV download issues in your Node-RED environment.</p>
+        
+        <div class="test-section">
+            <h2>Environment Information</h2>
+            <button onclick="checkEnvironment()">Check Environment</button>
+            <div id="env-info"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>URL Construction Test</h2>
+            <p>Enter your node ID to test URL construction:</p>
+            <input type="text" id="node-id" placeholder="Enter Node ID" style="width: 300px; padding: 5px;">
+            <input type="text" id="file-name" placeholder="Enter CSV filename" value="test-file.csv" style="width: 300px; padding: 5px;">
+            <br><br>
+            <button onclick="testUrls()">Test URL Construction</button>
+            <div id="url-test"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Endpoint Accessibility Test</h2>
+            <button onclick="testEndpoints()">Test Endpoint Access</button>
+            <div id="endpoint-test"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Alternative Download Methods</h2>
+            <button onclick="testIframeMethod()">Test Iframe Download</button>
+            <button onclick="testWindowOpenMethod()">Test Window.open Download</button>
+            <button onclick="testDirectLinkMethod()">Test Direct Link Download</button>
+            <div id="download-test"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Console Log</h2>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="console-log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('console-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            if (type === 'error') logEntry.style.color = 'red';
+            if (type === 'success') logEntry.style.color = 'green';
+            if (type === 'warning') logEntry.style.color = 'orange';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('console-log').innerHTML = '';
+        }
+        
+        function checkEnvironment() {
+            const envDiv = document.getElementById('env-info');
+            
+            const info = {
+                'Current URL': window.location.href,
+                'Origin': window.location.origin,
+                'Protocol': window.location.protocol,
+                'Host': window.location.host,
+                'Port': window.location.port,
+                'Pathname': window.location.pathname,
+                'User Agent': navigator.userAgent,
+                'Cookies Enabled': navigator.cookieEnabled,
+                'Local Storage': typeof(Storage) !== "undefined"
+            };
+            
+            // Check if we're in Node-RED context
+            if (typeof RED !== 'undefined') {
+                info['Node-RED Available'] = '✓ YES';
+                if (RED.settings) {
+                    info['HTTP Admin Root'] = RED.settings.httpAdminRoot || '/';
+                    info['HTTP Node Root'] = RED.settings.httpNodeRoot || '/';
+                    info['Base URL'] = RED.settings.baseURL || 'Not set';
+                }
+                if (RED.auth) {
+                    info['Authentication'] = '✓ Enabled';
+                } else {
+                    info['Authentication'] = '✗ Not detected';
+                }
+            } else {
+                info['Node-RED Available'] = '✗ NO (This is normal for standalone testing)';
+            }
+            
+            let html = '<h3>Environment Details:</h3><pre>';
+            for (const [key, value] of Object.entries(info)) {
+                html += `${key}: ${value}\n`;
+            }
+            html += '</pre>';
+            
+            envDiv.innerHTML = html;
+            log('Environment check completed');
+        }
+        
+        function testUrls() {
+            const nodeId = document.getElementById('node-id').value || 'test-node-id';
+            const fileName = document.getElementById('file-name').value || 'test-file.csv';
+            const testDiv = document.getElementById('url-test');
+            
+            log(`Testing URL construction with Node ID: ${nodeId}, File: ${fileName}`);
+            
+            // Construct URLs as the actual code would
+            const baseUrl = window.location.origin;
+            const adminRoot = (typeof RED !== 'undefined' && RED.settings.httpAdminRoot) ? RED.settings.httpAdminRoot : '';
+            const nodeRoot = (typeof RED !== 'undefined' && RED.settings.httpNodeRoot) ? RED.settings.httpNodeRoot : '';
+            
+            const authUrl = `${adminRoot}/express-logger/${nodeId}/download-csv/${encodeURIComponent(fileName)}`.replace('//', '/');
+            const publicUrl = `${baseUrl}${nodeRoot}/express-logger-download/${nodeId}/${encodeURIComponent(fileName)}`.replace('//', '/');
+            const relativeAuthUrl = `express-logger/${nodeId}/download-csv/${encodeURIComponent(fileName)}`;
+            
+            let html = '<h3>Generated URLs:</h3><pre>';
+            html += `Relative Auth URL: ${relativeAuthUrl}\n`;
+            html += `Full Auth URL: ${baseUrl}${authUrl}\n`;
+            html += `Public URL: ${publicUrl}\n`;
+            html += `Encoded Filename: ${encodeURIComponent(fileName)}\n`;
+            html += '</pre>';
+            
+            testDiv.innerHTML = html;
+            log('URL construction test completed');
+        }
+        
+        async function testEndpoints() {
+            const nodeId = document.getElementById('node-id').value || 'test-node-id';
+            const fileName = document.getElementById('file-name').value || 'test-file.csv';
+            const testDiv = document.getElementById('endpoint-test');
+            
+            log(`Testing endpoint accessibility for Node ID: ${nodeId}`);
+            
+            const tests = [];
+            
+            // Test relative auth endpoint
+            const relativeAuthUrl = `express-logger/${nodeId}/download-csv/${encodeURIComponent(fileName)}`;
+            tests.push(testEndpoint('Relative Auth Endpoint', relativeAuthUrl));
+            
+            // Test public endpoint if we can construct it
+            try {
+                const baseUrl = window.location.origin;
+                const nodeRoot = (typeof RED !== 'undefined' && RED.settings.httpNodeRoot) ? RED.settings.httpNodeRoot : '';
+                const publicUrl = `${baseUrl}${nodeRoot}/express-logger-download/${nodeId}/${encodeURIComponent(fileName)}`;
+                tests.push(testEndpoint('Public Endpoint', publicUrl));
+            } catch (e) {
+                log(`Could not test public endpoint: ${e.message}`, 'warning');
+            }
+            
+            try {
+                const results = await Promise.all(tests);
+                let html = '<h3>Endpoint Test Results:</h3>';
+                results.forEach(result => {
+                    const statusClass = result.success ? 'success' : 'error';
+                    html += `<div class="${statusClass}" style="margin: 5px 0; padding: 5px;">`;
+                    html += `<strong>${result.name}:</strong> ${result.message}`;
+                    html += `</div>`;
+                });
+                testDiv.innerHTML = html;
+                log('Endpoint accessibility test completed');
+            } catch (error) {
+                testDiv.innerHTML = `<div class="error">Test failed: ${error.message}</div>`;
+                log(`Endpoint test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testEndpoint(name, url) {
+            log(`Testing ${name}: ${url}`);
+            try {
+                const response = await fetch(url, {
+                    method: 'HEAD',
+                    credentials: 'same-origin'
+                });
+                
+                const success = response.ok;
+                const message = success ? 
+                    `✓ Accessible (${response.status})` : 
+                    `✗ Not accessible (${response.status} ${response.statusText})`;
+                
+                log(`${name} result: ${message}`, success ? 'success' : 'warning');
+                
+                return { name, success, message, status: response.status };
+            } catch (error) {
+                const message = `✗ Error: ${error.message}`;
+                log(`${name} error: ${message}`, 'error');
+                return { name, success: false, message, error: error.message };
+            }
+        }
+        
+        function testIframeMethod() {
+            const nodeId = document.getElementById('node-id').value || 'test-node-id';
+            const fileName = document.getElementById('file-name').value || 'test-file.csv';
+            
+            log(`Testing iframe download method for: ${fileName}`);
+            
+            const authUrl = `express-logger/${nodeId}/download-csv/${encodeURIComponent(fileName)}`;
+            
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = authUrl;
+            
+            iframe.onload = function() {
+                log('Iframe loaded successfully', 'success');
+            };
+            
+            iframe.onerror = function() {
+                log('Iframe failed to load', 'error');
+            };
+            
+            document.body.appendChild(iframe);
+            
+            setTimeout(() => {
+                if (iframe.parentNode) {
+                    document.body.removeChild(iframe);
+                    log('Iframe removed after timeout');
+                }
+            }, 3000);
+            
+            document.getElementById('download-test').innerHTML = '<p>Iframe download test initiated. Check console log for results.</p>';
+        }
+        
+        function testWindowOpenMethod() {
+            const nodeId = document.getElementById('node-id').value || 'test-node-id';
+            const fileName = document.getElementById('file-name').value || 'test-file.csv';
+            
+            log(`Testing window.open download method for: ${fileName}`);
+            
+            try {
+                const baseUrl = window.location.origin;
+                const nodeRoot = (typeof RED !== 'undefined' && RED.settings.httpNodeRoot) ? RED.settings.httpNodeRoot : '';
+                const publicUrl = `${baseUrl}${nodeRoot}/express-logger-download/${nodeId}/${encodeURIComponent(fileName)}`;
+                
+                const newWindow = window.open(publicUrl, '_blank');
+                
+                if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                    log('Window.open blocked by popup blocker', 'warning');
+                    document.getElementById('download-test').innerHTML = '<p>Window.open was blocked by popup blocker.</p>';
+                } else {
+                    log('Window.open succeeded', 'success');
+                    document.getElementById('download-test').innerHTML = '<p>Window.open test completed - check if new window opened.</p>';
+                }
+            } catch (error) {
+                log(`Window.open failed: ${error.message}`, 'error');
+                document.getElementById('download-test').innerHTML = `<p>Window.open failed: ${error.message}</p>`;
+            }
+        }
+        
+        function testDirectLinkMethod() {
+            const nodeId = document.getElementById('node-id').value || 'test-node-id';
+            const fileName = document.getElementById('file-name').value || 'test-file.csv';
+            
+            log(`Testing direct link download method for: ${fileName}`);
+            
+            try {
+                const authUrl = `express-logger/${nodeId}/download-csv/${encodeURIComponent(fileName)}`;
+                
+                const link = document.createElement('a');
+                link.href = authUrl;
+                link.download = fileName;
+                link.target = '_blank';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                
+                setTimeout(() => {
+                    if (link.parentNode) {
+                        document.body.removeChild(link);
+                    }
+                }, 100);
+                
+                log('Direct link click initiated', 'success');
+                document.getElementById('download-test').innerHTML = '<p>Direct link test completed - check if download started.</p>';
+            } catch (error) {
+                log(`Direct link failed: ${error.message}`, 'error');
+                document.getElementById('download-test').innerHTML = `<p>Direct link failed: ${error.message}</p>`;
+            }
+        }
+        
+        // Initialize
+        window.onload = function() {
+            log('Diagnostic page loaded');
+            checkEnvironment();
+        };
+    </script>
+</body>
+</html>
