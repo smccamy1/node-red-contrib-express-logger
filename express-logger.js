@@ -755,7 +755,39 @@ module.exports = function(RED) {
         }
     });
 
-    // HTTP endpoint for CSV download
+    // HTTP endpoint for CSV download (public endpoint)
+    RED.httpNode.get("/express-logger-download/:id/:fileName", function(req, res) {
+        const node = RED.nodes.getNode(req.params.id);
+        const fileName = req.params.fileName;
+        
+        if (!node) {
+            return res.status(404).json({ success: false, error: "Node not found" });
+        }
+
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const filePath = path.join(node.csvExportPath, fileName);
+            
+            // Check if file exists and is within the export directory (security check)
+            if (!fs.existsSync(filePath) || !filePath.startsWith(node.csvExportPath)) {
+                return res.status(404).json({ success: false, error: "File not found" });
+            }
+            
+            // Set headers for file download
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+            
+            // Stream the file
+            const fileStream = fs.createReadStream(filePath);
+            fileStream.pipe(res);
+            
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // HTTP endpoint for CSV download (authenticated endpoint)
     RED.httpAdmin.get("/express-logger/:id/download-csv/:fileName", RED.auth.needsPermission('express-logger.read'), function(req, res) {
         const node = RED.nodes.getNode(req.params.id);
         const fileName = req.params.fileName;

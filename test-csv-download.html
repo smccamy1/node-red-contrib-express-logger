@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV Download Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        button { padding: 10px 15px; margin: 10px 5px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CSV Download Test Page</h1>
+        <p>This page tests the CSV download functionality for the Express Logger Node-RED node.</p>
+        
+        <div class="status info">
+            <strong>Setup:</strong> Make sure to run the test server first: <code>node test-csv-download.js</code>
+        </div>
+
+        <h2>Test Functions</h2>
+        
+        <button onclick="testExport()">Test CSV Export</button>
+        <button onclick="testAuthenticatedDownload()">Test Authenticated Download</button>
+        <button onclick="testPublicDownload()">Test Public Download</button>
+        <button onclick="clearStatus()">Clear Status</button>
+
+        <div id="status"></div>
+
+        <h2>Manual Test URLs</h2>
+        <p>You can also test these URLs directly:</p>
+        <ul>
+            <li><a href="http://localhost:3000/express-logger-download/test-id/express-logger-export-test.csv" target="_blank">Public Download Link</a></li>
+            <li><a href="http://localhost:3000/express-logger/test-id/download-csv/express-logger-export-test.csv" target="_blank">Authenticated Download Link</a></li>
+        </ul>
+
+        <h2>Implementation Details</h2>
+        <p>The solution implements a dual-endpoint approach:</p>
+        <ol>
+            <li><strong>Authenticated Endpoint:</strong> <code>/express-logger/:id/download-csv/:fileName</code> - Uses Node-RED's httpAdmin with authentication</li>
+            <li><strong>Public Endpoint:</strong> <code>/express-logger-download/:id/:fileName</code> - Uses Node-RED's httpNode without authentication</li>
+            <li><strong>Fallback Logic:</strong> The frontend tries the authenticated endpoint first, then falls back to the public endpoint if authentication fails</li>
+        </ol>
+
+        <h2>Security Considerations</h2>
+        <ul>
+            <li>Public endpoint only serves files from the designated CSV export directory</li>
+            <li>Path traversal protection prevents access to files outside the export directory</li>
+            <li>Files are only accessible if they exist in the configured export path</li>
+            <li>Consider adding token-based access or time-limited URLs for additional security</li>
+        </ul>
+    </div>
+
+    <script>
+        let lastFileName = null;
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function clearStatus() {
+            document.getElementById('status').innerHTML = '';
+        }
+
+        async function testExport() {
+            showStatus('Testing CSV export...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:3000/express-logger/test-id/export-csv', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    lastFileName = data.fileName;
+                    showStatus(`✓ Export successful!<br>
+                        <strong>File:</strong> ${data.fileName}<br>
+                        <strong>Records:</strong> ${data.recordCount}<br>
+                        <strong>Path:</strong> ${data.filePath}`, 'success');
+                } else {
+                    showStatus(`✗ Export failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`✗ Export request failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAuthenticatedDownload() {
+            if (!lastFileName) {
+                showStatus('Please run "Test CSV Export" first to generate a file', 'error');
+                return;
+            }
+
+            showStatus('Testing authenticated download...', 'info');
+            
+            try {
+                const response = await fetch(`http://localhost:3000/express-logger/test-id/download-csv/${encodeURIComponent(lastFileName)}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = lastFileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showStatus(`✓ Authenticated download successful!<br>File: ${lastFileName}`, 'success');
+                } else {
+                    showStatus(`✗ Authenticated download failed: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`✗ Authenticated download request failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testPublicDownload() {
+            if (!lastFileName) {
+                showStatus('Please run "Test CSV Export" first to generate a file', 'error');
+                return;
+            }
+
+            showStatus('Testing public download...', 'info');
+            
+            try {
+                const response = await fetch(`http://localhost:3000/express-logger-download/test-id/${encodeURIComponent(lastFileName)}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = lastFileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showStatus(`✓ Public download successful!<br>File: ${lastFileName}`, 'success');
+                } else {
+                    showStatus(`✗ Public download failed: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`✗ Public download request failed: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

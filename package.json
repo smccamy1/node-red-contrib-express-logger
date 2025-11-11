@@ -19,6 +19,10 @@
       "express-logger": "express-logger.js"
     }
   },
+  "scripts": {
+    "test-csv": "node test-csv-download.js",
+    "test-csv-browser": "echo 'Open test-csv-download.html in your browser and run: npm run test-csv'"
+  },
   "author": "Stephen",
   "license": "MIT",
   "repository": {

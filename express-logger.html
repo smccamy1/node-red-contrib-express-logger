@@ -108,16 +108,55 @@
                     return;
                 }
                 
-                // Create download link
+                button.prop('disabled', true);
+                button.html('<i class="fa fa-spinner fa-spin"></i> Downloading...');
+                
+                // First try the authenticated endpoint
                 const downloadUrl = "express-logger/" + node.id + "/download-csv/" + encodeURIComponent(fileName);
                 
-                // Create a temporary link element and trigger download
-                const link = document.createElement('a');
-                link.href = downloadUrl;
-                link.download = fileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                fetch(downloadUrl, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Authorization': RED.settings.auth ? RED.settings.auth.type + ' ' + RED.settings.auth.access_token : ''
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.blob();
+                    } else if (response.status === 401 || response.status === 403) {
+                        // Authentication failed, try public endpoint
+                        const publicUrl = RED.settings.httpNodeRoot + "/express-logger-download/" + node.id + "/" + encodeURIComponent(fileName);
+                        return fetch(publicUrl).then(resp => {
+                            if (!resp.ok) {
+                                throw new Error('Download failed on both endpoints: ' + resp.statusText);
+                            }
+                            return resp.blob();
+                        });
+                    } else {
+                        throw new Error('Download failed: ' + response.statusText);
+                    }
+                })
+                .then(blob => {
+                    // Create download link with blob URL
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                    
+                    button.prop('disabled', false);
+                    button.html('<i class="fa fa-download"></i> Download CSV');
+                    RED.notify("File downloaded successfully", "success");
+                })
+                .catch(error => {
+                    button.prop('disabled', false);
+                    button.html('<i class="fa fa-download"></i> Download CSV');
+                    RED.notify("Download failed: " + error.message, "error");
+                });
                 
                 RED.notify("Download started: " + fileName, "success");
             });
