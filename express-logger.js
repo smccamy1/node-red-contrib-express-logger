@@ -22,6 +22,8 @@ module.exports = function(RED) {
         this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
         this.maxLogFileSize = parseInt(config.maxLogFileSize) || 10; // MB
         this.maxCsvFileSize = parseInt(config.maxCsvFileSize) || 50; // MB
+        this.maxRotatedFiles = parseInt(config.maxRotatedFiles) || 5; // Default 5 old log files
+        this.maxRotatedCsvFiles = parseInt(config.maxRotatedCsvFiles) || 10; // Default 10 old CSV files
         this.logRotation = config.logRotation !== false; // Default true
         
         // Store original body for logging
@@ -79,9 +81,50 @@ module.exports = function(RED) {
                 try {
                     fs.renameSync(filePath, rotatedFile);
                     node.log(`Log file rotated: ${rotatedFile}`);
+                    
+                    // Clean up old rotated files if limit is set
+                    if (node.maxRotatedFiles > 0) {
+                        cleanupOldFiles(dirname, basename, ext, node.maxRotatedFiles);
+                    }
                 } catch (err) {
                     node.error(`Failed to rotate log file: ${err.message}`);
                 }
+            }
+        }
+        
+        function cleanupOldFiles(directory, basename, extension, maxFiles) {
+            try {
+                // Find all rotated files matching the pattern
+                const files = fs.readdirSync(directory);
+                const rotatedFiles = files
+                    .filter(file => {
+                        // Match pattern: basename-YYYY-MM-DDTHH-mm-ss-sssZ.ext
+                        const pattern = new RegExp(`^${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z${extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+                        return pattern.test(file);
+                    })
+                    .map(file => ({
+                        name: file,
+                        path: path.join(directory, file),
+                        mtime: fs.statSync(path.join(directory, file)).mtime
+                    }))
+                    .sort((a, b) => b.mtime - a.mtime); // Sort by modification time (newest first)
+                
+                // Delete files beyond the limit
+                const filesToDelete = rotatedFiles.slice(maxFiles);
+                filesToDelete.forEach(file => {
+                    try {
+                        fs.unlinkSync(file.path);
+                        node.log(`Cleaned up old rotated file: ${file.name}`);
+                    } catch (err) {
+                        node.warn(`Failed to delete old rotated file ${file.name}: ${err.message}`);
+                    }
+                });
+                
+                if (filesToDelete.length > 0) {
+                    node.log(`Cleaned up ${filesToDelete.length} old rotated files, keeping ${rotatedFiles.length - filesToDelete.length} recent files`);
+                }
+            } catch (err) {
+                node.warn(`Failed to cleanup old rotated files: ${err.message}`);
             }
         }
         
@@ -104,6 +147,11 @@ module.exports = function(RED) {
                     
                     // Recreate the CSV file with headers
                     initializeCsvFile();
+                    
+                    // Clean up old rotated CSV files if limit is set
+                    if (node.maxRotatedCsvFiles > 0) {
+                        cleanupOldFiles(dirname, basename, ext, node.maxRotatedCsvFiles);
+                    }
                 } catch (err) {
                     node.error(`Failed to rotate CSV file: ${err.message}`);
                 }

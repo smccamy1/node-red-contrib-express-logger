@@ -14,9 +14,11 @@
             logFilePath: { value: "" },
             maxLogFileSize: { value: 10, validate: RED.validators.number() },
             logRotation: { value: true },
+            maxRotatedFiles: { value: 5, validate: RED.validators.number() },
             enableCsvExport: { value: false },
             csvLogFile: { value: "" },
-            maxCsvFileSize: { value: 50, validate: RED.validators.number() }
+            maxCsvFileSize: { value: 50, validate: RED.validators.number() },
+            maxRotatedCsvFiles: { value: 10, validate: RED.validators.number() }
         },
         inputs: 0,
         outputs: 1,
@@ -263,6 +265,12 @@
             <input type="checkbox" id="node-input-logRotation" style="display:inline-block; width:auto; vertical-align:top;" checked>
             <div style="font-size: 11px; color: #666; margin-top: 5px;">Enable automatic log file rotation</div>
         </div>
+        
+        <div class="form-row">
+            <label for="node-input-maxRotatedFiles" style="width: 120px;"><i class="fa fa-archive"></i> Max Rotated Files</label>
+            <input type="number" id="node-input-maxRotatedFiles" placeholder="5" min="0" max="50" style="width: 100px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of old log files to keep (0 = unlimited)</div>
+        </div>
     </div>
     
     <hr style="margin: 15px 0;">
@@ -284,6 +292,12 @@
             <label for="node-input-maxCsvFileSize" style="width: 120px;"><i class="fa fa-archive"></i> Max File Size (MB)</label>
             <input type="number" id="node-input-maxCsvFileSize" placeholder="50" style="width: 100px;" min="1" max="1000">
             <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum CSV file size before rotation (default: 50MB)</div>
+        </div>
+        
+        <div class="form-row">
+            <label for="node-input-maxRotatedCsvFiles" style="width: 120px;"><i class="fa fa-files-o"></i> Max Rotated Files</label>
+            <input type="number" id="node-input-maxRotatedCsvFiles" placeholder="10" min="0" max="100" style="width: 100px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of old CSV files to keep (0 = unlimited)</div>
         </div>
         
         <div class="form-row">
