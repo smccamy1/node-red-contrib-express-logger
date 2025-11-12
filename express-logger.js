@@ -793,7 +793,7 @@ module.exports = function(RED) {
     });
 
     // HTTP endpoint for CSV download (public endpoint)
-    RED.httpNode.get("/express-logger-download/:id/:fileName", function(req, res) {
+    RED.httpNode.get("/express-logger-download/:id", function(req, res) {
         const node = RED.nodes.getNode(req.params.id);
         
         if (!node) {
@@ -830,7 +830,7 @@ module.exports = function(RED) {
     });
 
     // HTTP endpoint for CSV download (authenticated endpoint)
-    RED.httpAdmin.get("/express-logger/:id/download-csv/:fileName", RED.auth.needsPermission('express-logger.read'), function(req, res) {
+    RED.httpAdmin.get("/express-logger/:id/download-csv", RED.auth.needsPermission('express-logger.read'), function(req, res) {
         const node = RED.nodes.getNode(req.params.id);
         
         if (!node) {
