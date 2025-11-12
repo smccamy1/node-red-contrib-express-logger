@@ -1,6 +1,6 @@
 # Node-RED Express Logger
 
-A comprehensive Node-RED custom node for detailed HTTP logging of the Express web server used by Node-RED's editor UI, with **enhanced monitoring capabilities specifically designed to debug automatic browser refreshes**.
+A streamlined Node-RED custom node for CSV logging of all HTTP requests to the Node-RED Express server, with enhanced system event monitoring for debugging connection issues and server state changes.
 
 ![Node-RED Express Logger](https://img.shields.io/badge/Node--RED-contrib-red?style=flat-square)
 ![npm version](https://img.shields.io/npm/v/node-red-contrib-express-logger?style=flat-square)
@@ -8,25 +8,18 @@ A comprehensive Node-RED custom node for detailed HTTP logging of the Express we
 
 ## 🎯 **Key Features**
 
-### **HTTP Request Monitoring**
-- Comprehensive logging of all HTTP requests to Node-RED's Express server
-- Multiple log formats: Combined, Common, Dev, Short, Tiny, and Custom
-- Real-time output to Node-RED debug panel and console
+### **CSV File Logging**
+- Direct CSV file logging for all HTTP requests with immediate write-to-disk
+- Configurable file size limits with automatic file replacement when limit reached
+- Structured data format perfect for analysis in Excel, scripts, or data tools
+- System event logging for server state monitoring
 
-### **🔍 Enhanced Refresh Detection & Debugging**
+### **🔍 Request & Connection Monitoring**
 
-This node includes specialized monitoring to help debug automatic browser refreshes - a common issue in Node-RED deployments:
-
-#### **Editor & Dashboard Request Classification**
-- **Editor Request Detection**: Identifies main Node-RED editor requests vs static assets
-- **Dashboard Request Monitoring**: Tracks dashboard-specific traffic separately
-- **Static Asset Filtering**: Distinguishes between functional requests and resources
-
-#### **Connection Health Monitoring** 
-- **Connection Timeouts**: Logs when connections timeout (common refresh trigger)
-- **Connection Closures**: Monitors normal vs error connection closures
-- **Server Events**: Tracks server close/error events that force refreshes
-- **Keep-Alive Issues**: Detects connection header problems
+#### **Request Classification**
+- **Editor vs Dashboard**: Separates Node-RED editor requests from dashboard traffic
+- **System Events**: Logs server events, connection issues, and Node-RED state changes
+- **Connection Analysis**: Tracks connection health and potential refresh triggers
 
 #### **Cache & Browser Behavior Analysis**
 - **Forced Refresh Detection**: Identifies `Cache-Control: no-cache` and `Pragma: no-cache` headers
@@ -76,34 +69,41 @@ npm install /path/to/node-red-contrib-express-logger-1.0.0.tgz
 ## 🚀 **Quick Start**
 
 1. **Add the Node**: Drag "Express Logger" from the Node-RED palette into your flow
-2. **Configure**: Double-click to set log format and monitoring options
-3. **Deploy**: The node immediately starts monitoring HTTP traffic
-4. **View Logs**: Check the Node-RED debug panel for detailed request logs
+2. **Configure CSV**: Enable CSV export and set file path and size limits
+3. **Deploy**: The node immediately starts logging HTTP traffic to CSV
+4. **Download Data**: Use the export/download button to retrieve CSV files for analysis
 
 ## ⚙️ **Configuration Options**
 
-- **Log Format**: Choose from Apache-style formats (Combined, Common, Dev, etc.)
-- **Include Headers**: Enable to capture request headers (helpful for refresh debugging)
+- **CSV Export**: Enable direct CSV file logging with configurable path
+- **Max File Size**: Set file size limit (when reached, old file deleted and new one started)  
+- **Include Headers**: Enable to capture request headers
 - **Include Request Body**: Log request payloads (with size limits)
 - **Filter Paths**: Exclude specific paths from logging
-- **Output to Debug Panel**: Enable/disable debug panel output
-- **Output to Flow**: Send log data as Node-RED messages
 
-## 📊 **Sample Log Output**
+## 📊 **CSV Data Structure**
 
 ### **Standard HTTP Logging**
 ```
 127.0.0.1 - - [2025-11-09T14:10:31.722Z] "GET /red/style.min.css HTTP/1.1" 304 - "http://127.0.0.1:1880/" "Mozilla/5.0..."
 ```
 
-### **Enhanced Refresh Detection**
+## 📊 **CSV Data Structure**
+
+The CSV file contains the following columns for easy analysis:
+
 ```
-EXPRESS LOGGER: EDITOR REQUEST DETECTED: GET /?id=a82394ef-9695-45bc-914f-f21dc90afba5
-EXPRESS LOGGER: CONNECTION TIMEOUT 127.0.0.1
-EXPRESS LOGGER: FORCED REFRESH DETECTED: /settings Cache-Control: no-cache
-EXPRESS LOGGER: FLOWS STARTED - may trigger browser refresh
-EXPRESS LOGGER: High memory usage: 612MB used of 1024MB total - may cause performance issues
+timestamp,method,url,statusCode,responseTime,ip,userAgent,isEditorRequest,isDashboardRequest,connectionIssues
+2024-11-11T10:30:45.123Z,GET,/red/settings,200,15,127.0.0.1,Mozilla/5.0...,true,false,
+2024-11-11T10:30:45.140Z,POST,/dashboard/ui,201,8,192.168.1.100,Chrome/91.0...,false,true,
+2024-11-11T10:30:46.001Z,SYSTEM,SERVER-ERROR,500,,localhost,Node-RED-System,false,false,connection-timeout
 ```
+
+### **System Events**
+The logger also captures important system events:
+- **Server Events**: START, STOP, ERROR, CONNECTION issues  
+- **Node-RED Events**: FLOWS-STARTED, FLOWS-STOPPED, NODE-ADDED, etc.
+- **Memory Monitoring**: HIGH-MEMORY-USAGE warnings and periodic stats
 
 ## 🔧 **Debugging Automatic Refreshes**
 
