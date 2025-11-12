@@ -9,14 +9,12 @@
             includeBody: { value: false },
             maxBodySize: { value: 1024, validate: RED.validators.number() },
             filterPaths: { value: "" },
-            outputToFlow: { value: false },
             enableCsvExport: { value: false },
             csvLogFile: { value: "" },
-            maxCsvFileSize: { value: 50, validate: RED.validators.number() },
-            maxRotatedCsvFiles: { value: 10, validate: RED.validators.number() }
+            maxCsvFileSize: { value: 50, validate: RED.validators.number() }
         },
         inputs: 0,
-        outputs: 1,
+        outputs: 0,
         icon: "white-globe.png",
         label: function() {
             return this.name || "Express Logger";
@@ -245,14 +243,6 @@
         <input type="text" id="node-input-filterPaths" placeholder="e.g., /debug,/settings (comma-separated)">
     </div>
     
-    <div class="form-row">
-        <label for="node-input-outputToFlow"><i class="fa fa-arrow-right"></i> Output to Flow</label>
-        <input type="checkbox" id="node-input-outputToFlow" style="display: inline-block; width: auto; vertical-align: top;">
-        <div class="form-tips" style="margin-left: 20px; margin-top: 5px; color: #666; font-style: italic;">
-            Enable this to send log data to the output. Connect a debug node to see the log messages.
-        </div>
-    </div>
-    
     <hr style="margin: 15px 0;">
     <h4 style="margin-bottom: 10px; color: #666;">CSV Export</h4>
     
@@ -271,13 +261,7 @@
         <div class="form-row">
             <label for="node-input-maxCsvFileSize" style="width: 120px;"><i class="fa fa-archive"></i> Max File Size (MB)</label>
             <input type="number" id="node-input-maxCsvFileSize" placeholder="50" style="width: 100px;" min="1" max="1000">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum CSV file size before rotation (default: 50MB)</div>
-        </div>
-        
-        <div class="form-row">
-            <label for="node-input-maxRotatedCsvFiles" style="width: 120px;"><i class="fa fa-files-o"></i> Max Rotated Files</label>
-            <input type="number" id="node-input-maxRotatedCsvFiles" placeholder="10" min="0" max="100" style="width: 100px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of old CSV files to keep (0 = unlimited)</div>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum CSV file size before starting a new file (default: 50MB)</div>
         </div>
         
         <div class="form-row">
@@ -334,9 +318,6 @@
         <dt>Output to Debug Panel <span class="property-type">boolean</span></dt>
         <dd>Send log messages to the Node-RED debug panel.</dd>
         
-        <dt>Output to Flow <span class="property-type">boolean</span></dt>
-        <dd>Send log data as messages to the node's output for further processing.</dd>
-        
         <dt>Save to File <span class="property-type">boolean</span></dt>
         <dd>Whether to save log messages to a file on disk for persistent storage.</dd>
         
@@ -380,28 +361,6 @@
         <li><strong>Memory Efficient</strong> - No in-memory storage limits, all data goes directly to disk</li>
         <li><strong>Timestamped Files</strong> - Export files include timestamps in filename</li>
     </ul>
-    </dl>
-    
-    <h3>Outputs</h3>
-    <dl class="message-properties">
-        <dt>payload <span class="property-type">object</span></dt>
-        <dd>When "Output to Flow" is enabled, outputs an object containing:
-            <ul>
-                <li><code>method</code> - HTTP method (GET, POST, etc.)</li>
-                <li><code>url</code> - Request URL</li>
-                <li><code>statusCode</code> - HTTP response status code</li>
-                <li><code>responseTime</code> - Response time in milliseconds</li>
-                <li><code>userAgent</code> - User agent string</li>
-                <li><code>ip</code> - Client IP address</li>
-                <li><code>headers</code> - Request headers (if enabled)</li>
-                <li><code>body</code> - Request body (if enabled)</li>
-                <li><code>timestamp</code> - ISO timestamp of the request</li>
-                <li><code>isEditorRequest</code> - Boolean indicating if this is a Node-RED editor request</li>
-                <li><code>isDashboardRequest</code> - Boolean indicating if this is a dashboard request</li>
-                <li><code>hasRefreshIndicators</code> - Boolean indicating potential refresh triggers</li>
-                <li><code>connectionIssues</code> - String describing any connection-related issues</li>
-            </ul>
-        </dd>
     </dl>
     
     <h3>Details</h3>

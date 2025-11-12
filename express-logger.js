@@ -15,14 +15,9 @@ module.exports = function(RED) {
         this.includeBody = config.includeBody || false;
         this.maxBodySize = parseInt(config.maxBodySize) || 1024;
         this.filterPaths = config.filterPaths ? config.filterPaths.split(',').map(p => p.trim()) : [];
-        this.outputToFlow = config.outputToFlow || false;
         this.enableCsvExport = config.enableCsvExport || false;
         this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
         this.maxCsvFileSize = parseInt(config.maxCsvFileSize) || 50; // MB
-        this.maxRotatedCsvFiles = parseInt(config.maxRotatedCsvFiles) || 10; // Default 10 old CSV files
-        
-        // Store original body for logging
-        let requestBodies = new Map();
         
         // CSV file configuration for direct writing
         const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'connectionIssues'];
@@ -52,69 +47,25 @@ module.exports = function(RED) {
             }
         }
         
-        
-        function cleanupOldFiles(directory, basename, extension, maxFiles) {
-            try {
-                // Find all rotated files matching the pattern
-                const files = fs.readdirSync(directory);
-                const rotatedFiles = files
-                    .filter(file => {
-                        // Match pattern: basename-YYYY-MM-DDTHH-mm-ss-sssZ.ext
-                        const pattern = new RegExp(`^${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z${extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
-                        return pattern.test(file);
-                    })
-                    .map(file => ({
-                        name: file,
-                        path: path.join(directory, file),
-                        mtime: fs.statSync(path.join(directory, file)).mtime
-                    }))
-                    .sort((a, b) => b.mtime - a.mtime); // Sort by modification time (newest first)
-                
-                // Delete files beyond the limit
-                const filesToDelete = rotatedFiles.slice(maxFiles);
-                filesToDelete.forEach(file => {
-                    try {
-                        fs.unlinkSync(file.path);
-                        node.log(`Cleaned up old rotated file: ${file.name}`);
-                    } catch (err) {
-                        node.warn(`Failed to delete old rotated file ${file.name}: ${err.message}`);
-                    }
-                });
-                
-                if (filesToDelete.length > 0) {
-                    node.log(`Cleaned up ${filesToDelete.length} old rotated files, keeping ${rotatedFiles.length - filesToDelete.length} recent files`);
-                }
-            } catch (err) {
-                node.warn(`Failed to cleanup old rotated files: ${err.message}`);
-            }
-        }
-        
-        function rotateCsvFile() {
+        function checkCsvFileSize() {
             if (!node.enableCsvExport || !fs.existsSync(node.csvLogFile)) return;
             
             const stats = fs.statSync(node.csvLogFile);
             const fileSizeMB = stats.size / (1024 * 1024);
             
             if (fileSizeMB >= node.maxCsvFileSize) {
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const ext = path.extname(node.csvLogFile);
-                const basename = path.basename(node.csvLogFile, ext);
-                const dirname = path.dirname(node.csvLogFile);
-                const rotatedFile = path.join(dirname, `${basename}-${timestamp}${ext}`);
-                
                 try {
-                    fs.renameSync(node.csvLogFile, rotatedFile);
-                    node.log(`CSV file rotated: ${rotatedFile} (${fileSizeMB.toFixed(2)}MB)`);
+                    // Delete the old file and start fresh
+                    fs.unlinkSync(node.csvLogFile);
+                    node.log(`CSV file size limit reached (${fileSizeMB.toFixed(2)}MB), starting new file`);
                     
-                    // Recreate the CSV file with headers
+                    // Create a new CSV file with headers
                     initializeCsvFile();
                     
-                    // Clean up old rotated CSV files if limit is set
-                    if (node.maxRotatedCsvFiles > 0) {
-                        cleanupOldFiles(dirname, basename, ext, node.maxRotatedCsvFiles);
-                    }
+                    // Log that we started a new file
+                    logSystemEventToCsv('CSV-FILE-RESET', `Previous file ${fileSizeMB.toFixed(2)}MB - started fresh`, 'info');
                 } catch (err) {
-                    node.error(`Failed to rotate CSV file: ${err.message}`);
+                    node.error(`Failed to reset CSV file: ${err.message}`);
                 }
             }
         }
@@ -123,8 +74,8 @@ module.exports = function(RED) {
             if (!node.enableCsvExport) return;
             
             try {
-                // Check if CSV file needs rotation before adding new entry
-                rotateCsvFile();
+                // Check if CSV file needs reset before adding new entry
+                checkCsvFileSize();
                 
                 // Create CSV row data
                 const csvEntry = {
@@ -226,9 +177,6 @@ module.exports = function(RED) {
             
             try {
                 let deletedCount = 0;
-                const dirname = path.dirname(node.csvLogFile);
-                const basename = path.basename(node.csvLogFile, path.extname(node.csvLogFile));
-                const extension = path.extname(node.csvLogFile);
                 
                 // Delete the main CSV file if it exists
                 if (fs.existsSync(node.csvLogFile)) {
@@ -237,84 +185,23 @@ module.exports = function(RED) {
                     node.log(`Deleted main CSV file: ${node.csvLogFile}`);
                 }
                 
-                // Find and delete all rotated CSV files
-                try {
-                    const files = fs.readdirSync(dirname);
-                    const rotatedFiles = files.filter(file => {
-                        // Match pattern: basename-YYYY-MM-DDTHH-mm-ss-sssZ.ext
-                        const pattern = new RegExp(`^${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z${extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
-                        return pattern.test(file);
-                    });
-                    
-                    rotatedFiles.forEach(file => {
-                        try {
-                            const filePath = path.join(dirname, file);
-                            fs.unlinkSync(filePath);
-                            deletedCount++;
-                            node.log(`Deleted rotated CSV file: ${file}`);
-                        } catch (err) {
-                            node.warn(`Failed to delete rotated file ${file}: ${err.message}`);
-                        }
-                    });
-                } catch (err) {
-                    node.warn(`Failed to scan directory for rotated files: ${err.message}`);
-                }
-                
                 // Log the deletion event to CSV if we recreate the file
                 if (deletedCount > 0) {
                     // Reinitialize CSV file (creates new file with headers)
                     initializeCsvFile();
                     // Log the deletion event
-                    logSystemEventToCsv('CSV-FILES-DELETED', `${deletedCount} files removed by user`, 'info');
+                    logSystemEventToCsv('CSV-FILES-DELETED', `${deletedCount} file removed by user`, 'info');
                 }
                 
-                node.log(`CSV deletion completed: ${deletedCount} files removed`);
+                node.log(`CSV deletion completed: ${deletedCount} file removed`);
                 return { 
                     success: true, 
                     deletedCount: deletedCount,
-                    message: `Successfully deleted ${deletedCount} CSV file(s)`
+                    message: `Successfully deleted CSV file`
                 };
             } catch (err) {
                 node.error(`Failed to delete CSV files: ${err.message}`);
                 return { success: false, error: err.message };
-            }
-        }
-        
-        // Format log message based on log level
-        function formatLogMessage(req, res, responseTime) {
-            const timestamp = new Date().toISOString();
-            const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '-';
-            const method = req.method || '-';
-            const url = req.url || '-';
-            const httpVersion = req.httpVersion || '1.1';
-            const status = res.statusCode || '-';
-            const contentLength = res.get('content-length') || '-';
-            const referrer = req.get('referrer') || req.get('referer') || '-';
-            const userAgent = req.get('user-agent') || '-';
-            
-            switch (node.logLevel) {
-                case 'combined':
-                    return `${ip} - - [${timestamp}] "${method} ${url} HTTP/${httpVersion}" ${status} ${contentLength} "${referrer}" "${userAgent}"`;
-                case 'common':
-                    return `${ip} - - [${timestamp}] "${method} ${url} HTTP/${httpVersion}" ${status} ${contentLength}`;
-                case 'dev':
-                    const statusColor = status >= 500 ? 'red' : status >= 400 ? 'yellow' : status >= 300 ? 'cyan' : 'green';
-                    return `${method} ${url} ${status} ${responseTime}ms - ${contentLength}`;
-                case 'short':
-                    return `${ip} ${method} ${url} HTTP/${httpVersion} ${status} ${contentLength} - ${responseTime} ms`;
-                case 'tiny':
-                    return `${method} ${url} ${status} ${contentLength} - ${responseTime} ms`;
-                case 'custom':
-                default:
-                    let msg = `[${timestamp}] ${method} ${url} - ${status} (${responseTime}ms) from ${ip}`;
-                    if (node.includeHeaders) {
-                        msg += ` | Headers: ${JSON.stringify(req.headers)}`;
-                    }
-                    if (node.includeBody && requestBodies.has(req)) {
-                        const body = requestBodies.get(req);
-                        msg += ` | Body: ${typeof body === 'string' ? body : JSON.stringify(body)}`;
-                    }
-                    return msg;
             }
         }
         
@@ -331,37 +218,6 @@ module.exports = function(RED) {
             // Log node initialization to CSV for baseline tracking
             logSystemEventToCsv('EXPRESS-LOGGER-INIT', `node-${node.id}-initialized`, 'info');
         }
-        
-        // Middleware to capture request body
-        const bodyCapture = function(req, res, next) {
-            if (node.includeBody && req.method !== 'GET' && req.method !== 'HEAD') {
-                let body = '';
-                let rawBody = Buffer.alloc(0);
-                
-                req.on('data', function(chunk) {
-                    rawBody = Buffer.concat([rawBody, chunk]);
-                    if (rawBody.length <= node.maxBodySize) {
-                        body += chunk.toString('utf8');
-                    }
-                });
-                
-                req.on('end', function() {
-                    try {
-                        if (body) {
-                            // Try to parse as JSON, fallback to string
-                            try {
-                                requestBodies.set(req, JSON.parse(body));
-                            } catch (e) {
-                                requestBodies.set(req, body);
-                            }
-                        }
-                    } catch (err) {
-                        // Ignore parsing errors
-                    }
-                });
-            }
-            next();
-        };
         
         // Main logging middleware
         const loggingMiddleware = function(req, res, next) {
@@ -383,10 +239,7 @@ module.exports = function(RED) {
             function logRequest() {
                 const responseTime = Date.now() - req._startTime;
                 
-                // Debug output to console
-                console.log("EXPRESS LOGGER: Request captured:", req.method, req.url, res.statusCode);
-                
-                // Create log data object for flow output
+                // Create log data object for CSV
                 const logData = {
                     method: req.method,
                     url: req.url,
@@ -395,22 +248,13 @@ module.exports = function(RED) {
                     ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
                     userAgent: req.get('User-Agent'),
                     timestamp: new Date().toISOString(),
-                    headers: node.includeHeaders ? req.headers : undefined,
-                    body: node.includeBody && requestBodies.has(req) ? requestBodies.get(req) : undefined
+                    isEditorRequest: req.url.startsWith('/red/') || req.url === '/' || req.url.startsWith('/?'),
+                    isDashboardRequest: req.url.startsWith('/dashboard') || req.url.startsWith('/ui'),
+                    connectionIssues: ''
                 };
                 
-                // Generate log message
-                const logMessage = formatLogMessage(req, res, responseTime);
-                
-                // Output to flow if enabled
-                if (node.outputToFlow && node.send) {
-                    node.send({ payload: logData });
-                }
-                
-                // Clean up
-                if (requestBodies.has(req)) {
-                    requestBodies.delete(req);
-                }
+                // Add to CSV log
+                addToCsvLog(logData);
             }
             
             // Override response methods to capture when response is sent
@@ -437,86 +281,8 @@ module.exports = function(RED) {
             try {
                 let middlewareAdded = false;
                 
-                console.log("EXPRESS LOGGER: Checking available interfaces...");
-                console.log("RED.httpAdmin:", !!RED.httpAdmin);
-                console.log("RED.httpNode:", !!RED.httpNode);
-                console.log("RED.server:", !!RED.server);
-                
-                // Enhanced logging for server state monitoring
-                if (RED.server) {
-                    console.log("EXPRESS LOGGER: Setting up enhanced server monitoring for refresh detection");
-                    
-                    // Monitor server state changes
-                    const originalEmit = RED.server.emit;
-                    RED.server.emit = function(event, ...args) {
-                        if (event === 'close' || event === 'error' || event === 'connection' || event === 'clientError') {
-                            console.log("EXPRESS LOGGER: SERVER EVENT:", event, args.length > 0 ? args[0]?.constructor?.name || 'data' : '');
-                            node.log(`Server event: ${event} - ${args.length > 0 ? args[0]?.constructor?.name || 'data' : 'no data'}`);
-                            
-                            // Log server events to CSV
-                            const eventDetails = args.length > 0 ? (args[0]?.message || args[0]?.constructor?.name || 'event-occurred') : 'no-details';
-                            const severity = event === 'error' || event === 'clientError' ? 'error' : 'info';
-                            logSystemEventToCsv(`SERVER-${event.toUpperCase()}`, eventDetails, severity);
-                        }
-                        return originalEmit.apply(this, arguments);
-                    };
-                    
-                    // Monitor connection state
-                    RED.server.on('connection', function(socket) {
-                        console.log("EXPRESS LOGGER: NEW CONNECTION from", socket.remoteAddress);
-                        node.log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
-                        
-                        // Log new connection to CSV
-                        logSystemEventToCsv('NEW-CONNECTION', `from ${socket.remoteAddress}:${socket.remotePort}`, 'info');
-                        
-                        socket.on('close', function(hadError) {
-                            console.log("EXPRESS LOGGER: CONNECTION CLOSED", socket.remoteAddress, hadError ? 'with error' : 'normal');
-                            node.log(`Connection closed ${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with error' : 'normal'}`);
-                            
-                            // Log connection close to CSV
-                            const severity = hadError ? 'warn' : 'info';
-                            logSystemEventToCsv('CONNECTION-CLOSED', `${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with-error' : 'normal'}`, severity);
-                        });
-                        
-                        socket.on('error', function(err) {
-                            console.log("EXPRESS LOGGER: CONNECTION ERROR", socket.remoteAddress, err.message);
-                            node.log(`Connection error ${socket.remoteAddress}:${socket.remotePort} - ${err.message}`);
-                            
-                            // Log connection error to CSV
-                            logSystemEventToCsv('CONNECTION-ERROR', `${socket.remoteAddress}:${socket.remotePort} - ${err.message}`, 'error');
-                        });
-                        
-                        socket.on('timeout', function() {
-                            console.log("EXPRESS LOGGER: CONNECTION TIMEOUT", socket.remoteAddress);
-                            node.log(`Connection timeout ${socket.remoteAddress}:${socket.remotePort}`);
-                            
-                            // Log connection timeout to CSV
-                            logSystemEventToCsv('CONNECTION-TIMEOUT', `${socket.remoteAddress}:${socket.remotePort}`, 'warn');
-                        });
-                    });
-                    
-                    // Monitor for server errors
-                    RED.server.on('error', function(err) {
-                        console.log("EXPRESS LOGGER: SERVER ERROR:", err.message);
-                        node.error(`Server error: ${err.message}`);
-                        
-                        // Log server error to CSV
-                        logSystemEventToCsv('SERVER-ERROR', err.message, 'error');
-                    });
-                    
-                    // Monitor server close events
-                    RED.server.on('close', function() {
-                        console.log("EXPRESS LOGGER: SERVER CLOSED");
-                        node.warn("Server closed event detected");
-                        
-                        // Log server close to CSV
-                        logSystemEventToCsv('SERVER-CLOSED', 'server-shutdown-detected', 'warn');
-                    });
-                }
-                
                 // Method 1: Direct server request event hooking
                 if (RED.server && RED.server.on) {
-                    console.log("EXPRESS LOGGER: Installing direct server request hook with refresh detection");
                     
                     // Hook the 'request' event directly on the HTTP server
                     RED.server.on('request', function(req, res) {
@@ -525,43 +291,11 @@ module.exports = function(RED) {
                             return;
                         }
                         
-                        console.log("EXPRESS LOGGER: Direct server request:", req.method, req.url);
                         req._startTime = Date.now();
                         
                         // Enhanced logging for refresh detection
                         const isEditorRequest = req.url.startsWith('/red/') || req.url === '/' || req.url.startsWith('/?');
                         const isDashboardRequest = req.url.startsWith('/dashboard') || req.url.startsWith('/ui');
-                        const isStaticAsset = req.url.includes('.js') || req.url.includes('.css') || req.url.includes('.svg') || req.url.includes('.png');
-                        
-                        if (isEditorRequest && !isStaticAsset) {
-                            console.log("EXPRESS LOGGER: EDITOR REQUEST DETECTED:", req.method, req.url);
-                            node.log(`EDITOR REQUEST: ${req.method} ${req.url} from ${req.get('User-Agent')?.substring(0, 50) || 'unknown'}`);
-                        }
-                        
-                        if (isDashboardRequest && !isStaticAsset) {
-                            console.log("EXPRESS LOGGER: DASHBOARD REQUEST DETECTED:", req.method, req.url);
-                            node.log(`DASHBOARD REQUEST: ${req.method} ${req.url} from ${req.get('User-Agent')?.substring(0, 50) || 'unknown'}`);
-                        }
-                        
-                        // Check for refresh-related headers
-                        const cacheControl = req.get('Cache-Control');
-                        const pragma = req.get('Pragma');
-                        const ifModifiedSince = req.get('If-Modified-Since');
-                        const ifNoneMatch = req.get('If-None-Match');
-                        
-                        if (cacheControl === 'no-cache' || pragma === 'no-cache') {
-                            console.log("EXPRESS LOGGER: FORCED REFRESH DETECTED:", req.url, 'Cache-Control:', cacheControl, 'Pragma:', pragma);
-                            node.warn(`Forced refresh detected: ${req.url} - Cache-Control: ${cacheControl}, Pragma: ${pragma}`);
-                        }
-                        
-                        // Check for connection header issues that might cause refreshes
-                        const connection = req.get('Connection');
-                        const keepAlive = req.get('Keep-Alive');
-                        
-                        if (connection && connection.toLowerCase().includes('close')) {
-                            console.log("EXPRESS LOGGER: CONNECTION CLOSE HEADER:", req.url);
-                            node.log(`Connection close header on: ${req.url}`);
-                        }
                         
                         // Hook into the response completion
                         const originalEnd = res.end;
@@ -570,301 +304,41 @@ module.exports = function(RED) {
                             res.end = function(chunk, encoding) {
                                 try {
                                     const responseTime = Date.now() - (req._startTime || Date.now());
-                                    const logMessage = formatLogMessage(req, res, responseTime);
                                     
                                     // Enhanced logging for response analysis
                                     const responseConnection = res.get('Connection');
-                                    const responseContentType = res.get('Content-Type');
-                                    const responseCacheControl = res.get('Cache-Control');
                                     
-                                    console.log("EXPRESS LOGGER (DIRECT):", logMessage);
-                                    
-                                    // Log potential refresh triggers
-                                    if (res.statusCode >= 400) {
-                                        console.log("EXPRESS LOGGER: ERROR RESPONSE:", res.statusCode, req.url);
-                                        node.warn(`Error response ${res.statusCode} for ${req.url} - may trigger refresh`);
-                                    }
-                                    
-                                    if (responseConnection && responseConnection.toLowerCase().includes('close')) {
-                                        console.log("EXPRESS LOGGER: RESPONSE FORCES CONNECTION CLOSE:", req.url);
-                                        node.warn(`Response forces connection close: ${req.url}`);
-                                    }
-                                    
-                                    if (isEditorRequest && res.statusCode === 200 && responseTime > 5000) {
-                                        console.log("EXPRESS LOGGER: SLOW EDITOR RESPONSE:", responseTime + "ms", req.url);
-                                        node.warn(`Slow editor response ${responseTime}ms for ${req.url} - may cause timeout refresh`);
-                                    }
-                                    
-                                    if (node.outputToFlow && node.send) {
-                                        const logData = {
-                                            method: req.method,
-                                            url: req.url,
-                                            statusCode: res.statusCode,
-                                            responseTime: responseTime,
-                                            ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
-                                            userAgent: req.headers ? req.headers['user-agent'] : undefined,
-                                            timestamp: new Date().toISOString(),
-                                            isEditorRequest: isEditorRequest,
-                                            isDashboardRequest: isDashboardRequest,
-                                            isStaticAsset: isStaticAsset,
-                                            connectionHeader: connection,
-                                            responseConnection: responseConnection,
-                                            cacheControl: cacheControl,
-                                            responseCacheControl: responseCacheControl,
-                                            connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
-                                        };
-                                        
-                                        // Add to CSV log
-                                        addToCsvLog(logData);
-                                        
-                                        node.send({ payload: logData });
-                                    } else if (node.enableCsvExport) {
-                                        // Still add to CSV even if not outputting to flow
-                                        const logData = {
-                                            method: req.method,
-                                            url: req.url,
-                                            statusCode: res.statusCode,
-                                            responseTime: responseTime,
-                                            ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
-                                            userAgent: req.headers ? req.headers['user-agent'] : undefined,
-                                            timestamp: new Date().toISOString(),
-                                            isEditorRequest: isEditorRequest,
-                                            isDashboardRequest: isDashboardRequest,
-                                            connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
-                                        };
-                                        addToCsvLog(logData);
-                                    }
-                                } catch (err) {
-                                    console.error("EXPRESS LOGGER DIRECT ERROR:", err);
-                                }
-                                return originalEnd.call(this, chunk, encoding);
-                            };
-                        }
-                    });
-                    
-                    middlewareAdded = true;
-                    console.log("EXPRESS LOGGER: Direct server request hook with refresh detection installed");
-                }
-                
-                // Method 2: Try global process event hooking as backup
-                if (process.listeners && !middlewareAdded) {
-                    console.log("EXPRESS LOGGER: Installing process-level HTTP monitoring");
-                    
-                    // Monitor all HTTP requests in the process
-                    const events = require('events');
-                    const originalEmit = events.EventEmitter.prototype.emit;
-                    
-                    events.EventEmitter.prototype.emit = function(event, ...args) {
-                        if (event === 'request' && this.constructor.name === 'Server' && args[0] && args[1]) {
-                            const req = args[0];
-                            const res = args[1];
-                            
-                            if (req.url && req.method && req.url.indexOf('/socket.io') === -1) {
-                                console.log("EXPRESS LOGGER: Process-level request:", req.method, req.url);
-                                req._startTime = Date.now();
-                                
-                                const originalEnd = res.end;
-                                if (!res._loggerHooked) {
-                                    res._loggerHooked = true;
-                                    res.end = function(chunk, encoding) {
-                                        try {
-                                            const responseTime = Date.now() - (req._startTime || Date.now());
-                                            const logMessage = formatLogMessage(req, res, responseTime);
-                                            console.log("EXPRESS LOGGER (PROCESS):", logMessage);
-                                            
-                                        } catch (err) {
-                                            console.error("EXPRESS LOGGER PROCESS ERROR:", err);
-                                        }
-                                        return originalEnd.call(this, chunk, encoding);
+                                    const logData = {
+                                        method: req.method,
+                                        url: req.url,
+                                        statusCode: res.statusCode,
+                                        responseTime: responseTime,
+                                        ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
+                                        userAgent: req.headers ? req.headers['user-agent'] : undefined,
+                                        timestamp: new Date().toISOString(),
+                                        isEditorRequest: isEditorRequest,
+                                        isDashboardRequest: isDashboardRequest,
+                                        connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
                                     };
-                                }
-                            }
-                        }
-                        return originalEmit.apply(this, arguments);
-                    };
-                    
-                    middlewareAdded = true;
-                    console.log("EXPRESS LOGGER: Process-level HTTP monitoring installed");
-                }
-                
-                // Method 3: WebSocket and Socket.IO monitoring for dashboard refresh detection
-                if (typeof global !== 'undefined') {
-                    console.log("EXPRESS LOGGER: Setting up WebSocket monitoring for refresh detection");
-                    
-                    // Monitor Socket.IO events if available
-                    setImmediate(() => {
-                        try {
-                            // Try to access Node-RED's Socket.IO instance
-                            if (RED.comms && RED.comms.publish) {
-                                console.log("EXPRESS LOGGER: Found Node-RED comms, monitoring");
-                                const originalPublish = RED.comms.publish;
-                                RED.comms.publish = function(topic, data, retain) {
-                                    if (topic === 'status' || topic === 'flows' || topic === 'runtime-state') {
-                                        console.log("EXPRESS LOGGER: COMMS EVENT:", topic, typeof data);
-                                        node.log(`Node-RED comms event: ${topic} - ${typeof data === 'object' ? JSON.stringify(data).substring(0, 100) : data}`);
-                                        
-                                        // Log comms events to CSV
-                                        const dataStr = typeof data === 'object' ? JSON.stringify(data).substring(0, 100) : String(data).substring(0, 100);
-                                        logSystemEventToCsv(`COMMS-${topic.toUpperCase()}`, `data: ${dataStr}`, 'info');
-                                    }
-                                    return originalPublish.call(this, topic, data, retain);
-                                };
-                            }
-                            
-                            // Monitor global socket.io if available
-                            if (global.io) {
-                                console.log("EXPRESS LOGGER: Found global Socket.IO, setting up monitoring");
-                                const originalOn = global.io.on;
-                                global.io.on = function(event, handler) {
-                                    if (event === 'connection' || event === 'disconnect') {
-                                        console.log("EXPRESS LOGGER: Socket.IO event:", event);
-                                        node.log(`Socket.IO ${event} event`);
-                                        
-                                        // Log Socket.IO events to CSV
-                                        logSystemEventToCsv(`SOCKETIO-${event.toUpperCase()}`, 'websocket-event', 'info');
-                                    }
-                                    return originalOn.call(this, event, handler);
-                                };
-                            }
-                        } catch (err) {
-                            console.log("EXPRESS LOGGER: WebSocket monitoring setup error:", err.message);
-                        }
-                    });
-                }
-                
-                // Method 4: Express middleware as final backup
-                if (RED.httpAdmin && RED.httpAdmin.use) {
-                    console.log("EXPRESS LOGGER: Installing Express middleware backup with refresh detection");
-                    
-                    RED.httpAdmin.use(function(req, res, next) {
-                        console.log("EXPRESS LOGGER: Express middleware triggered:", req.method, req.url);
-                        req._startTime = Date.now();
-                        
-                        // Log session and authentication details that might affect refreshes
-                        const sessionId = req.sessionID || req.get('X-Session-ID') || 'none';
-                        const authorization = req.get('Authorization') ? 'present' : 'none';
-                        
-                        if (req.url === '/' || req.url.startsWith('/?')) {
-                            console.log("EXPRESS LOGGER: MAIN EDITOR LOAD:", sessionId, authorization);
-                            node.log(`Main editor load - Session: ${sessionId}, Auth: ${authorization}`);
-                        }
-                        
-                        const originalEnd = res.end;
-                        if (!res._expressLoggerHooked) {
-                            res._expressLoggerHooked = true;
-                            res.end = function(chunk, encoding) {
-                                try {
-                                    const responseTime = Date.now() - req._startTime;
-                                    const logMessage = formatLogMessage(req, res, responseTime);
-                                    console.log("EXPRESS LOGGER (EXPRESS):", logMessage);
                                     
-                                    // Check for session issues that might cause refreshes
-                                    if (res.statusCode === 401 || res.statusCode === 403) {
-                                        console.log("EXPRESS LOGGER: AUTH FAILURE - MAY TRIGGER REFRESH:", req.url);
-                                        node.warn(`Authentication failure ${res.statusCode} on ${req.url} - may trigger refresh`);
-                                    }
-                                    
+                                    // Add to CSV log
+                                    addToCsvLog(logData);
                                 } catch (err) {
-                                    console.error("EXPRESS LOGGER EXPRESS ERROR:", err);
+                                    // Ignore logging errors
                                 }
                                 return originalEnd.call(this, chunk, encoding);
                             };
                         }
-                        
-                        next();
                     });
                     
                     middlewareAdded = true;
-                    console.log("EXPRESS LOGGER: Express middleware backup with refresh detection installed");
                 }
                 
                 if (middlewareAdded) {
-                    node.log("HTTP logging active - monitoring all requests with refresh detection");
-                    console.log("EXPRESS LOGGER: All hooks installed for node " + node.id);
-                    
-                    // Add Node-RED specific monitoring for refresh causes
-                    setTimeout(() => {
-                        try {
-                            // Monitor Node-RED events that might trigger refreshes
-                            if (RED.events && RED.events.on) {
-                                console.log("EXPRESS LOGGER: Setting up Node-RED event monitoring");
-                                
-                                RED.events.on("flows:started", function() {
-                                    console.log("EXPRESS LOGGER: FLOWS STARTED - may trigger browser refresh");
-                                    node.warn("Flows started - may trigger browser refresh");
-                                    
-                                    // Log flows started to CSV
-                                    logSystemEventToCsv('FLOWS-STARTED', 'flows-deployment-completed', 'warn');
-                                });
-                                
-                                RED.events.on("flows:stopped", function() {
-                                    console.log("EXPRESS LOGGER: FLOWS STOPPED - may trigger browser refresh");
-                                    node.warn("Flows stopped - may trigger browser refresh");
-                                    
-                                    // Log flows stopped to CSV
-                                    logSystemEventToCsv('FLOWS-STOPPED', 'flows-shutdown-initiated', 'warn');
-                                });
-                                
-                                RED.events.on("runtime-event", function(event) {
-                                    if (event.id === "node-red-version" || event.id === "runtime-state") {
-                                        console.log("EXPRESS LOGGER: RUNTIME EVENT:", event.id, event.payload);
-                                        node.log(`Runtime event: ${event.id} - ${JSON.stringify(event.payload).substring(0, 100)}`);
-                                        
-                                        // Log runtime event to CSV
-                                        const payload = JSON.stringify(event.payload).substring(0, 100);
-                                        logSystemEventToCsv(`RUNTIME-${event.id.toUpperCase()}`, payload, 'info');
-                                    }
-                                });
-                                
-                                RED.events.on("registry:node-added", function(id) {
-                                    console.log("EXPRESS LOGGER: NODE ADDED:", id, "- may trigger refresh");
-                                    node.log(`Node added: ${id} - may trigger refresh`);
-                                    
-                                    // Log node addition to CSV
-                                    logSystemEventToCsv('NODE-ADDED', `node-type: ${id}`, 'warn');
-                                });
-                                
-                                RED.events.on("registry:node-removed", function(id) {
-                                    console.log("EXPRESS LOGGER: NODE REMOVED:", id, "- may trigger refresh");
-                                    node.log(`Node removed: ${id} - may trigger refresh`);
-                                    
-                                    // Log node removal to CSV
-                                    logSystemEventToCsv('NODE-REMOVED', `node-type: ${id}`, 'warn');
-                                });
-                            }
-                            
-                            // Monitor for memory pressure that might cause refreshes
-                            const monitorMemory = () => {
-                                const usage = process.memoryUsage();
-                                const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
-                                const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
-                                
-                                if (heapUsedMB > 512) { // Alert if using more than 512MB
-                                    console.log("EXPRESS LOGGER: HIGH MEMORY USAGE:", heapUsedMB + "MB used of", heapTotalMB + "MB total");
-                                    node.warn(`High memory usage: ${heapUsedMB}MB used of ${heapTotalMB}MB total - may cause performance issues`);
-                                    
-                                    // Log high memory usage to CSV
-                                    logSystemEventToCsv('HIGH-MEMORY-USAGE', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'warn');
-                                }
-                                
-                                // Also log memory stats periodically for baseline tracking (every 10 checks = 5 minutes)
-                                monitorMemory.counter = (monitorMemory.counter || 0) + 1;
-                                if (monitorMemory.counter % 10 === 0) {
-                                    logSystemEventToCsv('MEMORY-STATS', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'info');
-                                }
-                            };
-                            
-                            // Check memory every 30 seconds
-                            setInterval(monitorMemory, 30000);
-                            
-                        } catch (err) {
-                            console.log("EXPRESS LOGGER: Event monitoring setup error:", err.message);
-                        }
-                    }, 2000);
-                    
-                    node.status({ fill: "green", shape: "dot", text: "refresh monitoring active" });
+                    node.log("HTTP logging active - CSV monitoring only");
+                    node.status({ fill: "green", shape: "dot", text: "CSV logging active" });
                 } else {
-                    node.error("Could not install any HTTP monitoring hooks");
+                    node.error("Could not install HTTP monitoring hooks");
                     node.status({ fill: "red", shape: "ring", text: "error" });
                 }
             } catch (err) {
@@ -885,9 +359,6 @@ module.exports = function(RED) {
             node.status({});
             
             // CSV data is automatically saved with direct file writing - no cleanup needed
-            
-            // Clean up any remaining request bodies
-            requestBodies.clear();
             
             // Note: We don't restore HTTP module patches as they might be used by other instances
             // In a production environment, you might want to implement reference counting
