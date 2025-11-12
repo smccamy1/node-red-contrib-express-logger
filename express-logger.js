@@ -215,6 +215,136 @@ module.exports = function(RED) {
             logSystemEventToCsv('EXPRESS-LOGGER-INIT', `node-${node.id}-initialized`, 'info');
         }
         
+        // Add Node-RED system event monitoring
+        const setupSystemEventMonitoring = function() {
+            try {
+                // Monitor Node-RED events that might trigger refreshes or indicate system state
+                if (RED.events && RED.events.on) {
+                    node.log("Setting up Node-RED system event monitoring");
+                    
+                    RED.events.on("flows:started", function() {
+                        node.log("Flows started - deployment completed");
+                        logSystemEventToCsv('FLOWS-STARTED', 'flows-deployment-completed', 'info');
+                    });
+                    
+                    RED.events.on("flows:stopped", function() {
+                        node.log("Flows stopped - shutdown initiated");
+                        logSystemEventToCsv('FLOWS-STOPPED', 'flows-shutdown-initiated', 'warn');
+                    });
+                    
+                    RED.events.on("runtime-event", function(event) {
+                        if (event.id === "node-red-version" || event.id === "runtime-state") {
+                            node.log(`Runtime event: ${event.id}`);
+                            const payload = JSON.stringify(event.payload || {}).substring(0, 100);
+                            logSystemEventToCsv(`RUNTIME-${event.id.toUpperCase()}`, payload, 'info');
+                        }
+                    });
+                    
+                    RED.events.on("registry:node-added", function(id) {
+                        node.log(`Node type added: ${id}`);
+                        logSystemEventToCsv('NODE-TYPE-ADDED', `node-type: ${id}`, 'info');
+                    });
+                    
+                    RED.events.on("registry:node-removed", function(id) {
+                        node.log(`Node type removed: ${id}`);
+                        logSystemEventToCsv('NODE-TYPE-REMOVED', `node-type: ${id}`, 'warn');
+                    });
+                    
+                    RED.events.on("registry:module-updated", function(module) {
+                        node.log(`Module updated: ${module}`);
+                        logSystemEventToCsv('MODULE-UPDATED', `module: ${module}`, 'info');
+                    });
+                }
+                
+                // Monitor server state changes if available
+                if (RED.server) {
+                    node.log("Setting up server event monitoring");
+                    
+                    // Monitor connection state
+                    RED.server.on('connection', function(socket) {
+                        logSystemEventToCsv('NEW-CONNECTION', `from ${socket.remoteAddress}:${socket.remotePort}`, 'info');
+                    });
+                    
+                    RED.server.on('error', function(err) {
+                        node.error(`Server error: ${err.message}`);
+                        logSystemEventToCsv('SERVER-ERROR', err.message, 'error');
+                    });
+                    
+                    RED.server.on('close', function() {
+                        node.warn("Server closed event detected");
+                        logSystemEventToCsv('SERVER-CLOSED', 'server-shutdown-detected', 'warn');
+                    });
+                }
+                
+                // Monitor for memory pressure that might affect performance
+                const monitorMemory = () => {
+                    try {
+                        const usage = process.memoryUsage();
+                        const heapUsedMB = Math.round(usage.heapUsed / 1024 / 1024);
+                        const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
+                        
+                        // Alert if using more than 512MB
+                        if (heapUsedMB > 512) {
+                            node.warn(`High memory usage: ${heapUsedMB}MB used of ${heapTotalMB}MB total`);
+                            logSystemEventToCsv('HIGH-MEMORY-USAGE', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'warn');
+                        }
+                        
+                        // Also log memory stats periodically for baseline tracking (every 10 checks = 5 minutes)
+                        monitorMemory.counter = (monitorMemory.counter || 0) + 1;
+                        if (monitorMemory.counter % 10 === 0) {
+                            logSystemEventToCsv('MEMORY-STATS', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'info');
+                        }
+                    } catch (err) {
+                        // Ignore memory monitoring errors
+                    }
+                };
+                
+                // Check memory every 30 seconds
+                const memoryInterval = setInterval(monitorMemory, 30000);
+                
+                // Store interval so we can clean it up on close
+                node._memoryInterval = memoryInterval;
+                
+                // Monitor process events
+                const onProcessExit = () => {
+                    logSystemEventToCsv('PROCESS-EXIT', 'node-red-process-exiting', 'warn');
+                };
+                
+                const onProcessSIGINT = () => {
+                    logSystemEventToCsv('PROCESS-SIGINT', 'interrupt-signal-received', 'warn');
+                };
+                
+                const onProcessSIGTERM = () => {
+                    logSystemEventToCsv('PROCESS-SIGTERM', 'termination-signal-received', 'warn');
+                };
+                
+                const onProcessUncaughtException = (err) => {
+                    logSystemEventToCsv('UNCAUGHT-EXCEPTION', err.message || 'unknown-error', 'error');
+                };
+                
+                process.on('exit', onProcessExit);
+                process.on('SIGINT', onProcessSIGINT);
+                process.on('SIGTERM', onProcessSIGTERM);
+                process.on('uncaughtException', onProcessUncaughtException);
+                
+                // Store event handlers so we can clean them up
+                node._processEventHandlers = {
+                    exit: onProcessExit,
+                    SIGINT: onProcessSIGINT,
+                    SIGTERM: onProcessSIGTERM,
+                    uncaughtException: onProcessUncaughtException
+                };
+                
+                node.log("System event monitoring active");
+                
+            } catch (err) {
+                node.warn(`System event monitoring setup error: ${err.message}`);
+            }
+        };
+        
+        // Set up system monitoring after a short delay to ensure Node-RED is fully initialized
+        setTimeout(setupSystemEventMonitoring, 2000);
+        
         // Main logging middleware
         const loggingMiddleware = function(req, res, next) {
             // Skip filtered paths
@@ -347,6 +477,9 @@ module.exports = function(RED) {
         // Initial status
         node.status({ fill: "yellow", shape: "ring", text: "initializing" });
         
+        // Log Node-RED startup
+        logSystemEventToCsv('NODE-RED-STARTUP', `express-logger-starting-pid-${process.pid}`, 'info');
+        
         // Install immediately - HTTP module patching should work at any time
         addMiddleware();
         
@@ -354,14 +487,35 @@ module.exports = function(RED) {
         this.on('close', function(removed, done) {
             node.status({});
             
+            // Clean up system monitoring
+            if (node._memoryInterval) {
+                clearInterval(node._memoryInterval);
+            }
+            
+            if (node._processEventHandlers) {
+                try {
+                    process.removeListener('exit', node._processEventHandlers.exit);
+                    process.removeListener('SIGINT', node._processEventHandlers.SIGINT);
+                    process.removeListener('SIGTERM', node._processEventHandlers.SIGTERM);
+                    process.removeListener('uncaughtException', node._processEventHandlers.uncaughtException);
+                } catch (err) {
+                    // Ignore cleanup errors
+                }
+            }
+            
             // CSV data is automatically saved with direct file writing - no cleanup needed
+            
+            // Log node shutdown
+            if (removed) {
+                logSystemEventToCsv('EXPRESS-LOGGER-REMOVED', `node-${node.id}-removed`, 'info');
+                node.log("Express logging middleware removed");
+            } else {
+                logSystemEventToCsv('EXPRESS-LOGGER-STOPPED', `node-${node.id}-stopped`, 'info');
+            }
             
             // Note: We don't restore HTTP module patches as they might be used by other instances
             // In a production environment, you might want to implement reference counting
             
-            if (removed) {
-                node.log("Express logging middleware removed");
-            }
             done();
         });
     }
