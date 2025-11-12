@@ -263,6 +263,11 @@ module.exports = function(RED) {
                     // Monitor connection state
                     RED.server.on('connection', function(socket) {
                         logSystemEventToCsv('NEW-CONNECTION', `from ${socket.remoteAddress}:${socket.remotePort}`, 'info');
+                        
+                        // Monitor for WebSocket upgrades (Dashboard 2.0 uses these)
+                        socket.on('upgrade', function(req, socket, head) {
+                            logSystemEventToCsv('WEBSOCKET-UPGRADE', `${req.url} from ${socket.remoteAddress}`, 'info');
+                        });
                     });
                     
                     RED.server.on('error', function(err) {
@@ -275,6 +280,47 @@ module.exports = function(RED) {
                         logSystemEventToCsv('SERVER-CLOSED', 'server-shutdown-detected', 'warn');
                     });
                 }
+                
+                // Monitor Socket.IO events specifically for Dashboard 2.0
+                const monitorSocketIO = () => {
+                    try {
+                        // Try to access Socket.IO instance after Node-RED is fully loaded
+                        if (typeof global !== 'undefined' && global.socketio) {
+                            const io = global.socketio;
+                            node.log("Found Socket.IO instance, setting up dashboard monitoring");
+                            
+                            io.on('connection', function(socket) {
+                                logSystemEventToCsv('SOCKETIO-CONNECT', `client-connected-${socket.id}`, 'info');
+                                
+                                socket.on('disconnect', function(reason) {
+                                    logSystemEventToCsv('SOCKETIO-DISCONNECT', `client-${socket.id}-reason-${reason}`, 'warn');
+                                });
+                                
+                                socket.on('error', function(error) {
+                                    logSystemEventToCsv('SOCKETIO-ERROR', `client-${socket.id}-error-${error.message}`, 'error');
+                                });
+                            });
+                            
+                        } else {
+                            // Try alternative method to find Socket.IO
+                            const server = RED.server;
+                            if (server && server.listeners('upgrade').length > 0) {
+                                node.log("Found WebSocket upgrade listeners, monitoring dashboard connections");
+                                
+                                server.on('upgrade', function(request, socket, head) {
+                                    if (request.url && request.url.includes('socket.io')) {
+                                        logSystemEventToCsv('DASHBOARD-WEBSOCKET', `upgrade-${request.url}`, 'info');
+                                    }
+                                });
+                            }
+                        }
+                    } catch (err) {
+                        node.warn(`Socket.IO monitoring setup error: ${err.message}`);
+                    }
+                };
+                
+                // Try to set up Socket.IO monitoring after a longer delay
+                setTimeout(monitorSocketIO, 5000);
                 
                 // Monitor for memory pressure that might affect performance
                 const monitorMemory = () => {
@@ -375,7 +421,9 @@ module.exports = function(RED) {
                     userAgent: req.get('User-Agent'),
                     timestamp: new Date().toISOString(),
                     isEditorRequest: req.url.startsWith('/red/') || req.url === '/' || req.url.startsWith('/?'),
-                    isDashboardRequest: req.url.startsWith('/dashboard') || req.url.startsWith('/ui'),
+                    isDashboardRequest: req.url.startsWith('/dashboard') || req.url.startsWith('/ui') || 
+                                       req.url.includes('ui_base') || req.url.includes('ui-base') ||
+                                       req.url.includes('@flowfuse/node-red-dashboard'),
                     connectionIssues: ''
                 };
                 
@@ -412,8 +460,27 @@ module.exports = function(RED) {
                     
                     // Hook the 'request' event directly on the HTTP server
                     RED.server.on('request', function(req, res) {
-                        // Skip websocket requests and other non-HTTP traffic
-                        if (!req.url || req.url.indexOf('/socket.io') !== -1) {
+                        // Handle Socket.IO requests separately for dashboard monitoring
+                        if (req.url && req.url.indexOf('/socket.io') !== -1) {
+                            // Log Socket.IO requests which are important for Dashboard 2.0
+                            const logData = {
+                                method: req.method,
+                                url: req.url,
+                                statusCode: 101, // WebSocket upgrade
+                                responseTime: 0,
+                                ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress,
+                                userAgent: req.headers ? req.headers['user-agent'] : undefined,
+                                timestamp: new Date().toISOString(),
+                                isEditorRequest: false,
+                                isDashboardRequest: true, // Socket.IO is typically for dashboard
+                                connectionIssues: req.url.includes('transport=polling') ? 'polling-fallback' : ''
+                            };
+                            addToCsvLog(logData);
+                            return;
+                        }
+                        
+                        // Skip other websocket requests that aren't Socket.IO
+                        if (!req.url) {
                             return;
                         }
                         
@@ -421,7 +488,9 @@ module.exports = function(RED) {
                         
                         // Enhanced logging for refresh detection
                         const isEditorRequest = req.url.startsWith('/red/') || req.url === '/' || req.url.startsWith('/?');
-                        const isDashboardRequest = req.url.startsWith('/dashboard') || req.url.startsWith('/ui');
+                        const isDashboardRequest = req.url.startsWith('/dashboard') || req.url.startsWith('/ui') || 
+                                                 req.url.includes('ui_base') || req.url.includes('ui-base') ||
+                                                 req.url.includes('@flowfuse/node-red-dashboard');
                         
                         // Hook into the response completion
                         const originalEnd = res.end;
