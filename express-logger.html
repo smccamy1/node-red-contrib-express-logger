@@ -16,9 +16,8 @@
             maxLogFileSize: { value: 10, validate: RED.validators.number() },
             logRotation: { value: true },
             enableCsvExport: { value: false },
-            csvExportPath: { value: "" },
-            csvDataFile: { value: "" },
-            maxPersistentEntries: { value: 50000, validate: RED.validators.number() }
+            csvLogFile: { value: "" },
+            maxCsvFileSize: { value: 50, validate: RED.validators.number() }
         },
         inputs: 0,
         outputs: 1,
@@ -79,14 +78,14 @@
                         button.prop('disabled', false);
                         button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
                         if (data.success) {
-                            RED.notify("CSV exported successfully (" + data.recordCount + " entries)", "success");
-                            console.log("Export successful:", data);
+                            RED.notify("CSV ready for download (" + data.recordCount + " entries)", "success");
+                            console.log("CSV file ready:", data);
                             
                             // Enable and show download button
                             downloadBtn.show();
                             downloadBtn.prop('disabled', false);
                             downloadBtn.data('filename', data.fileName);
-                            downloadBtn.find('.download-info').text(data.fileName);
+                            downloadBtn.find('.download-info').text(`${data.recordCount} entries (${Math.round(data.fileSize/1024)}KB)`);
                         } else {
                             RED.notify("Export failed: " + (data.error || "Unknown error"), "error");
                             downloadBtn.hide();
@@ -101,20 +100,14 @@
                 });
             });
 
-            // CSV Download button handler - Simplified and more reliable
+            // CSV Download button handler - Simplified for direct CSV file download
             $("#download-csv-btn").click(function() {
                 const button = $(this);
-                const fileName = button.data('filename');
                 
-                if (!fileName) {
-                    RED.notify("No file available for download", "error");
-                    return;
-                }
-                
-                console.log("Starting download for file:", fileName);
+                console.log("Starting CSV download");
                 
                 // Method 1: Try direct iframe download (works with auth)
-                const authUrl = "express-logger/" + node.id + "/download-csv/" + encodeURIComponent(fileName);
+                const authUrl = "express-logger/" + node.id + "/download-csv";
                 console.log("Trying authenticated download:", authUrl);
                 
                 const iframe = document.createElement('iframe');
@@ -134,7 +127,7 @@
                     console.log("Attempting public endpoint fallback");
                     const baseUrl = window.location.origin;
                     const httpRoot = RED.settings.httpNodeRoot || "";
-                    const publicUrl = baseUrl + httpRoot + "/express-logger-download/" + node.id + "/" + encodeURIComponent(fileName);
+                    const publicUrl = baseUrl + httpRoot + "/express-logger-download/" + node.id;
                     
                     console.log("Public download URL:", publicUrl);
                     
@@ -146,7 +139,7 @@
                         console.log("Popup blocked, using direct link");
                         const link = document.createElement('a');
                         link.href = publicUrl;
-                        link.download = fileName;
+                        link.download = 'express-logger.csv';
                         link.target = '_blank';
                         link.style.display = 'none';
                         document.body.appendChild(link);
@@ -159,7 +152,7 @@
                     }
                 }, 1500);
                 
-                RED.notify("Download started: " + fileName, "success");
+                RED.notify("Download started", "success");
             });
         }
     });
@@ -251,37 +244,29 @@
     
     <div class="form-row" id="csv-export-options" style="margin-left: 20px;">
         <div class="form-row">
-            <label for="node-input-csvExportPath" style="width: 120px;"><i class="fa fa-file-excel-o"></i> CSV Export Path</label>
-            <input type="text" id="node-input-csvExportPath" placeholder="logs/exports" style="width: 300px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Directory for CSV exports (default: {userDir}/logs/exports)</div>
-        </div>
-        
-        <h5 style="margin: 15px 0 10px 0; color: #666;">Persistent Storage Settings</h5>
-        
-        <div class="form-row">
-            <label for="node-input-csvDataFile" style="width: 120px;"><i class="fa fa-database"></i> Data Storage File</label>
-            <input type="text" id="node-input-csvDataFile" placeholder="logs/express-logger-data.json" style="width: 300px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">File for persistent CSV data storage (survives Node-RED restarts)</div>
+            <label for="node-input-csvLogFile" style="width: 120px;"><i class="fa fa-file-text-o"></i> CSV Log File</label>
+            <input type="text" id="node-input-csvLogFile" placeholder="logs/express-logger.csv" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">File path for direct CSV logging (default: {userDir}/logs/express-logger.csv)</div>
         </div>
         
         <div class="form-row">
-            <label for="node-input-maxPersistentEntries" style="width: 120px;"><i class="fa fa-archive"></i> Max Stored Entries</label>
-            <input type="number" id="node-input-maxPersistentEntries" placeholder="50000" style="width: 100px;" min="1000" max="1000000">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of log entries to keep in persistent storage (default: 50,000)</div>
+            <label for="node-input-maxCsvFileSize" style="width: 120px;"><i class="fa fa-archive"></i> Max File Size (MB)</label>
+            <input type="number" id="node-input-maxCsvFileSize" placeholder="50" style="width: 100px;" min="1" max="1000">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum CSV file size before rotation (default: 50MB)</div>
         </div>
         
         <div class="form-row">
             <button type="button" id="export-csv-btn" class="red-ui-button" style="margin-top: 10px;">
-                <i class="fa fa-download"></i> Export Current Logs to CSV
+                <i class="fa fa-refresh"></i> Check CSV Status
             </button>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Export accumulated logs to CSV file</div>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Check current CSV file status and prepare for download</div>
         </div>
 
         <div class="form-row">
             <button type="button" id="download-csv-btn" class="red-ui-button" style="margin-top: 10px; display: none;">
-                <i class="fa fa-cloud-download"></i> Download Last Export: <span class="download-info"></span>
+                <i class="fa fa-cloud-download"></i> Download CSV: <span class="download-info"></span>
             </button>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Download the most recently exported CSV file</div>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Download the current CSV log file</div>
         </div>
     </div>
 </script>
@@ -340,16 +325,13 @@
         <dd>Whether to enable automatic log file rotation when max size is reached. Rotated files are timestamped.</dd>
         
         <dt>Enable CSV Export <span class="property-type">boolean</span></dt>
-        <dd>Whether to enable CSV export functionality for log data analysis.</dd>
+        <dd>Whether to enable direct CSV file logging for data analysis.</dd>
         
-        <dt>CSV Export Path <span class="property-type">string</span></dt>
-        <dd>Directory path for CSV exports. Default: {userDir}/logs/exports/. Use the export button in configuration to manually export current logs.</dd>
+        <dt>CSV Log File <span class="property-type">string</span></dt>
+        <dd>File path for direct CSV logging. Default: {userDir}/logs/express-logger.csv. Each log entry is immediately written to this file.</dd>
         
-        <dt>Data Storage File <span class="property-type">string</span></dt>
-        <dd>File path for persistent CSV data storage. Default: {userDir}/logs/express-logger-data.json. This file preserves log entries across Node-RED restarts.</dd>
-        
-        <dt>Max Stored Entries <span class="property-type">number</span></dt>
-        <dd>Maximum number of log entries to keep in persistent storage. Default: 50,000. Older entries are automatically removed to prevent excessive disk usage.</dd>
+        <dt>Max File Size (MB) <span class="property-type">number</span></dt>
+        <dd>Maximum size of the CSV file in megabytes before rotation. Default: 50 MB. When exceeded, the file is rotated with a timestamp.</dd>
     </dl>
     
     <h3>File Logging Features</h3>
@@ -362,15 +344,15 @@
     </ul>
     
     <h3>CSV Export Features</h3>
-    <p>The CSV export functionality enables data analysis and sharing with persistent storage:</p>
+    <p>The CSV export functionality provides direct file logging for easy data analysis:</p>
     <ul>
-        <li><strong>Structured Data Export</strong> - Exports structured log data in CSV format</li>
-        <li><strong>Persistent Storage</strong> - Log entries are automatically saved to disk and survive Node-RED restarts</li>
-        <li><strong>Manual Export</strong> - Use the configuration panel button to export current logs</li>
-        <li><strong>Automatic Backup</strong> - Data is saved periodically and on Node-RED shutdown</li>
-        <li><strong>Memory Management</strong> - Automatically limits stored entries to prevent memory issues</li>
+        <li><strong>Direct File Logging</strong> - Each log entry is immediately written to a CSV file</li>
+        <li><strong>Persistent Storage</strong> - All data is automatically preserved across Node-RED restarts</li>
+        <li><strong>Automatic Rotation</strong> - Files are rotated when they exceed the configured size limit</li>
+        <li><strong>Real-time Export</strong> - No need to export - data is continuously saved</li>
+        <li><strong>Simple Download</strong> - One-click download of the current CSV file</li>
         <li><strong>Proper Escaping</strong> - Handles commas, quotes, and newlines in data fields</li>
-        <li><strong>Configurable Retention</strong> - Control how many entries are kept in persistent storage</li>
+        <li><strong>Memory Efficient</strong> - No in-memory storage limits, all data goes directly to disk</li>
         <li><strong>Timestamped Files</strong> - Export files include timestamps in filename</li>
     </ul>
     </dl>

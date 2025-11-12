@@ -27,76 +27,31 @@ module.exports = function(RED) {
         // Store original body for logging
         let requestBodies = new Map();
         
-        // CSV log storage for export
-        let csvLogEntries = [];
+        // CSV file configuration for direct writing
         const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'hasRefreshIndicators', 'connectionIssues'];
         
-        // Persistent storage for CSV data
-        this.csvDataFile = config.csvDataFile || path.join(RED.settings.userDir, 'logs', 'express-logger-data.json');
-        const maxPersistentEntries = parseInt(config.maxPersistentEntries) || 50000; // Max entries to persist
+        // Main CSV log file path (single continuous file)
+        this.csvLogFile = config.csvLogFile || path.join(RED.settings.userDir, 'logs', 'node-red-http-logs.csv');
         
-        // Load existing CSV data from persistent storage
-        function loadCsvData() {
-            try {
-                if (fs.existsSync(node.csvDataFile)) {
-                    const data = fs.readFileSync(node.csvDataFile, 'utf8');
-                    const parsedData = JSON.parse(data);
-                    if (Array.isArray(parsedData.entries)) {
-                        csvLogEntries = parsedData.entries;
-                        node.log(`Loaded ${csvLogEntries.length} CSV log entries from persistent storage`);
-                        
-                        // Remove old entries if exceeding limit
-                        if (csvLogEntries.length > maxPersistentEntries) {
-                            const oldCount = csvLogEntries.length;
-                            csvLogEntries = csvLogEntries.slice(-Math.floor(maxPersistentEntries * 0.8));
-                            node.log(`Trimmed CSV entries from ${oldCount} to ${csvLogEntries.length} to manage memory`);
-                            saveCsvData(); // Save the trimmed data
-                        }
-                    }
-                } else {
-                    node.log("No existing CSV data file found, starting fresh");
-                }
-            } catch (error) {
-                node.warn(`Failed to load CSV data from ${node.csvDataFile}: ${error.message}`);
-                csvLogEntries = []; // Start fresh on error
-            }
-        }
-        
-        // Save CSV data to persistent storage
-        function saveCsvData() {
+        // Initialize CSV file with headers if it doesn't exist
+        function initializeCsvFile() {
+            if (!node.enableCsvExport) return;
+            
             try {
                 // Ensure directory exists
-                const dir = path.dirname(node.csvDataFile);
+                const dir = path.dirname(node.csvLogFile);
                 if (!fs.existsSync(dir)) {
                     fs.mkdirSync(dir, { recursive: true });
                 }
                 
-                const dataToSave = {
-                    lastUpdated: new Date().toISOString(),
-                    entryCount: csvLogEntries.length,
-                    entries: csvLogEntries
-                };
-                
-                fs.writeFileSync(node.csvDataFile, JSON.stringify(dataToSave, null, 2), 'utf8');
+                // Create CSV file with headers if it doesn't exist
+                if (!fs.existsSync(node.csvLogFile)) {
+                    const headerLine = csvHeaders.join(',') + '\n';
+                    fs.writeFileSync(node.csvLogFile, headerLine, 'utf8');
+                    node.log(`Created new CSV log file: ${node.csvLogFile}`);
+                }
             } catch (error) {
-                node.warn(`Failed to save CSV data to ${node.csvDataFile}: ${error.message}`);
-            }
-        }
-        
-        // Periodic save of CSV data (every 100 entries or 5 minutes)
-        let saveCounter = 0;
-        let lastSaveTime = Date.now();
-        
-        function scheduleSave() {
-            saveCounter++;
-            const now = Date.now();
-            const timeSinceLastSave = now - lastSaveTime;
-            
-            // Save every 100 entries or every 5 minutes, whichever comes first
-            if (saveCounter >= 100 || timeSinceLastSave >= 300000) {
-                saveCsvData();
-                saveCounter = 0;
-                lastSaveTime = now;
+                node.error(`Failed to initialize CSV file: ${error.message}`);
             }
         }
         
@@ -153,76 +108,77 @@ module.exports = function(RED) {
         function addToCsvLog(logData) {
             if (!node.enableCsvExport) return;
             
-            const csvEntry = {
-                timestamp: logData.timestamp || new Date().toISOString(),
-                method: logData.method || '',
-                url: logData.url || '',
-                statusCode: logData.statusCode || '',
-                responseTime: logData.responseTime || '',
-                ip: logData.ip || '',
-                userAgent: (logData.userAgent || '').substring(0, 100), // Limit length
-                isEditorRequest: logData.isEditorRequest || false,
-                isDashboardRequest: logData.isDashboardRequest || false,
-                hasRefreshIndicators: logData.hasRefreshIndicators || false,
-                connectionIssues: logData.connectionIssues || ''
-            };
-            
-            csvLogEntries.push(csvEntry);
-            
-            // Schedule periodic save to persistent storage
-            scheduleSave();
-            
-            // Limit memory usage - keep only last 10000 entries in memory
-            if (csvLogEntries.length > 10000) {
-                csvLogEntries = csvLogEntries.slice(-5000); // Keep last 5000 in memory
-                // Save immediately when trimming to avoid data loss
-                saveCsvData();
+            try {
+                // Create CSV row data
+                const csvEntry = {
+                    timestamp: logData.timestamp || new Date().toISOString(),
+                    method: logData.method || '',
+                    url: logData.url || '',
+                    statusCode: logData.statusCode || '',
+                    responseTime: logData.responseTime || '',
+                    ip: logData.ip || '',
+                    userAgent: (logData.userAgent || '').substring(0, 100), // Limit length
+                    isEditorRequest: logData.isEditorRequest || false,
+                    isDashboardRequest: logData.isDashboardRequest || false,
+                    hasRefreshIndicators: logData.hasRefreshIndicators || false,
+                    connectionIssues: logData.connectionIssues || ''
+                };
+                
+                // Format as CSV row
+                const row = csvHeaders.map(header => {
+                    let value = csvEntry[header] || '';
+                    // Escape commas and quotes in CSV
+                    if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+                        value = '"' + value.replace(/"/g, '""') + '"';
+                    }
+                    return value;
+                });
+                
+                // Append to CSV file
+                const csvLine = row.join(',') + '\n';
+                fs.appendFileSync(node.csvLogFile, csvLine, 'utf8');
+                
+            } catch (error) {
+                node.warn(`Failed to write to CSV file: ${error.message}`);
             }
         }
         
         function exportToCsv() {
-            if (!node.enableCsvExport || csvLogEntries.length === 0) {
-                return { success: false, error: "CSV export not enabled or no data available" };
+            if (!node.enableCsvExport) {
+                return { success: false, error: "CSV export not enabled" };
             }
             
             try {
-                const exportPath = node.csvExportPath;
-                
-                // Ensure export directory exists
-                if (!fs.existsSync(exportPath)) {
-                    fs.mkdirSync(exportPath, { recursive: true });
+                // Check if CSV file exists
+                if (!fs.existsSync(node.csvLogFile)) {
+                    return { success: false, error: "No CSV log data available" };
                 }
                 
-                // Create CSV content
-                let csvContent = csvHeaders.join(',') + '\n';
+                // Get file stats to determine record count
+                const stats = fs.statSync(node.csvLogFile);
+                let recordCount = 0;
                 
-                csvLogEntries.forEach(entry => {
-                    const row = csvHeaders.map(header => {
-                        let value = entry[header] || '';
-                        // Escape commas and quotes in CSV
-                        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-                            value = '"' + value.replace(/"/g, '""') + '"';
-                        }
-                        return value;
-                    });
-                    csvContent += row.join(',') + '\n';
-                });
+                // Count lines in the file (subtract 1 for header)
+                try {
+                    const content = fs.readFileSync(node.csvLogFile, 'utf8');
+                    const lines = content.split('\n').filter(line => line.trim() !== '');
+                    recordCount = Math.max(0, lines.length - 1); // Subtract header line
+                } catch (error) {
+                    node.warn(`Failed to count CSV records: ${error.message}`);
+                }
                 
-                // Write to file with timestamp
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const csvFileName = `node-red-http-logs-${timestamp}.csv`;
-                const fullPath = path.resolve(exportPath, csvFileName);
+                const fileName = path.basename(node.csvLogFile);
                 
-                fs.writeFileSync(fullPath, csvContent, 'utf8');
-                node.log(`CSV export completed: ${fullPath} (${csvLogEntries.length} entries)`);
+                node.log(`CSV export ready: ${node.csvLogFile} (${recordCount} entries)`);
                 return { 
                     success: true, 
-                    filePath: fullPath, 
-                    fileName: csvFileName,
-                    recordCount: csvLogEntries.length 
+                    filePath: node.csvLogFile, 
+                    fileName: fileName,
+                    recordCount: recordCount,
+                    fileSize: stats.size
                 };
             } catch (err) {
-                node.error(`Failed to export CSV: ${err.message}`);
+                node.error(`Failed to prepare CSV export: ${err.message}`);
                 return { success: false, error: err.message };
             }
         }
@@ -268,9 +224,9 @@ module.exports = function(RED) {
         // Expose the exportToCsv function as a node method
         node.exportToCsv = exportToCsv;
         
-        // Load existing CSV data from persistent storage on startup
+        // Initialize CSV file on startup
         if (node.enableCsvExport) {
-            loadCsvData();
+            initializeCsvFile();
         }
         
         // Middleware to capture request body
@@ -795,15 +751,7 @@ module.exports = function(RED) {
         this.on('close', function(removed, done) {
             node.status({});
             
-            // Save any remaining CSV data before closing
-            if (node.enableCsvExport && csvLogEntries.length > 0) {
-                try {
-                    saveCsvData();
-                    node.log(`Saved ${csvLogEntries.length} CSV entries before shutdown`);
-                } catch (error) {
-                    node.warn(`Failed to save CSV data on shutdown: ${error.message}`);
-                }
-            }
+            // CSV data is automatically saved with direct file writing - no cleanup needed
             
             // Clean up any remaining request bodies
             requestBodies.clear();
@@ -847,21 +795,26 @@ module.exports = function(RED) {
     // HTTP endpoint for CSV download (public endpoint)
     RED.httpNode.get("/express-logger-download/:id/:fileName", function(req, res) {
         const node = RED.nodes.getNode(req.params.id);
-        const fileName = req.params.fileName;
         
         if (!node) {
             return res.status(404).json({ success: false, error: "Node not found" });
         }
 
+        if (!node.enableCsvExport) {
+            return res.status(404).json({ success: false, error: "CSV export not enabled" });
+        }
+
         try {
             const fs = require('fs');
             const path = require('path');
-            const filePath = path.join(node.csvExportPath, fileName);
+            const filePath = node.csvLogFile;
             
-            // Check if file exists and is within the export directory (security check)
-            if (!fs.existsSync(filePath) || !filePath.startsWith(node.csvExportPath)) {
-                return res.status(404).json({ success: false, error: "File not found" });
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ success: false, error: "CSV log file not found" });
             }
+            
+            const fileName = path.basename(filePath);
             
             // Set headers for file download
             res.setHeader('Content-Type', 'text/csv');
@@ -879,21 +832,26 @@ module.exports = function(RED) {
     // HTTP endpoint for CSV download (authenticated endpoint)
     RED.httpAdmin.get("/express-logger/:id/download-csv/:fileName", RED.auth.needsPermission('express-logger.read'), function(req, res) {
         const node = RED.nodes.getNode(req.params.id);
-        const fileName = req.params.fileName;
         
         if (!node) {
             return res.status(404).json({ success: false, error: "Node not found" });
         }
 
+        if (!node.enableCsvExport) {
+            return res.status(404).json({ success: false, error: "CSV export not enabled" });
+        }
+
         try {
             const fs = require('fs');
             const path = require('path');
-            const filePath = path.join(node.csvExportPath, fileName);
+            const filePath = node.csvLogFile;
             
-            // Check if file exists and is within the export directory (security check)
-            if (!fs.existsSync(filePath) || !filePath.startsWith(node.csvExportPath)) {
-                return res.status(404).json({ success: false, error: "File not found" });
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ success: false, error: "CSV log file not found" });
             }
+            
+            const fileName = path.basename(filePath);
             
             // Set headers for file download
             res.setHeader('Content-Type', 'text/csv');
