@@ -102,6 +102,7 @@
             // CSV Download button handler - Simplified for direct CSV file download
             $("#download-csv-btn").click(function() {
                 const button = $(this);
+                let downloadAttempted = false;
                 
                 console.log("Starting CSV download");
                 
@@ -121,9 +122,32 @@
                     }
                 }, 3000);
                 
-                // Method 2: Fallback to public endpoint if auth fails
+                // Method 2: Fallback to public endpoint only if iframe hasn't worked
                 setTimeout(function() {
-                    console.log("Attempting public endpoint fallback");
+                    // Check if the iframe approach might have failed by testing the auth endpoint
+                    if (!downloadAttempted) {
+                        fetch(authUrl, { method: 'HEAD' })
+                            .then(response => {
+                                if (!response.ok) {
+                                    // Auth failed, try public endpoint
+                                    console.log("Auth endpoint failed, attempting public endpoint fallback");
+                                    attemptPublicDownload();
+                                } else {
+                                    console.log("Auth endpoint accessible, assuming download worked");
+                                }
+                            })
+                            .catch(() => {
+                                // Network error or auth failed, try public endpoint
+                                console.log("Auth endpoint unreachable, attempting public endpoint fallback");
+                                attemptPublicDownload();
+                            });
+                    }
+                }, 1500);
+                
+                function attemptPublicDownload() {
+                    if (downloadAttempted) return; // Prevent multiple attempts
+                    downloadAttempted = true;
+                    
                     const baseUrl = window.location.origin;
                     const httpRoot = RED.settings.httpNodeRoot || "";
                     
@@ -159,7 +183,7 @@
                             }
                         }, 100);
                     }
-                }, 1500);
+                }
                 
                 RED.notify("Download started", "success");
             });
