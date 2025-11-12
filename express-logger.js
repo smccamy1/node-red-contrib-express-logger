@@ -31,6 +31,75 @@ module.exports = function(RED) {
         let csvLogEntries = [];
         const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'hasRefreshIndicators', 'connectionIssues'];
         
+        // Persistent storage for CSV data
+        this.csvDataFile = config.csvDataFile || path.join(RED.settings.userDir, 'logs', 'express-logger-data.json');
+        const maxPersistentEntries = parseInt(config.maxPersistentEntries) || 50000; // Max entries to persist
+        
+        // Load existing CSV data from persistent storage
+        function loadCsvData() {
+            try {
+                if (fs.existsSync(node.csvDataFile)) {
+                    const data = fs.readFileSync(node.csvDataFile, 'utf8');
+                    const parsedData = JSON.parse(data);
+                    if (Array.isArray(parsedData.entries)) {
+                        csvLogEntries = parsedData.entries;
+                        node.log(`Loaded ${csvLogEntries.length} CSV log entries from persistent storage`);
+                        
+                        // Remove old entries if exceeding limit
+                        if (csvLogEntries.length > maxPersistentEntries) {
+                            const oldCount = csvLogEntries.length;
+                            csvLogEntries = csvLogEntries.slice(-Math.floor(maxPersistentEntries * 0.8));
+                            node.log(`Trimmed CSV entries from ${oldCount} to ${csvLogEntries.length} to manage memory`);
+                            saveCsvData(); // Save the trimmed data
+                        }
+                    }
+                } else {
+                    node.log("No existing CSV data file found, starting fresh");
+                }
+            } catch (error) {
+                node.warn(`Failed to load CSV data from ${node.csvDataFile}: ${error.message}`);
+                csvLogEntries = []; // Start fresh on error
+            }
+        }
+        
+        // Save CSV data to persistent storage
+        function saveCsvData() {
+            try {
+                // Ensure directory exists
+                const dir = path.dirname(node.csvDataFile);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+                
+                const dataToSave = {
+                    lastUpdated: new Date().toISOString(),
+                    entryCount: csvLogEntries.length,
+                    entries: csvLogEntries
+                };
+                
+                fs.writeFileSync(node.csvDataFile, JSON.stringify(dataToSave, null, 2), 'utf8');
+            } catch (error) {
+                node.warn(`Failed to save CSV data to ${node.csvDataFile}: ${error.message}`);
+            }
+        }
+        
+        // Periodic save of CSV data (every 100 entries or 5 minutes)
+        let saveCounter = 0;
+        let lastSaveTime = Date.now();
+        
+        function scheduleSave() {
+            saveCounter++;
+            const now = Date.now();
+            const timeSinceLastSave = now - lastSaveTime;
+            
+            // Save every 100 entries or every 5 minutes, whichever comes first
+            if (saveCounter >= 100 || timeSinceLastSave >= 300000) {
+                saveCsvData();
+                saveCounter = 0;
+                lastSaveTime = now;
+            }
+        }
+        
         // File logging functions
         function ensureLogDirectory(filePath) {
             const dir = path.dirname(filePath);
@@ -100,9 +169,14 @@ module.exports = function(RED) {
             
             csvLogEntries.push(csvEntry);
             
-            // Limit memory usage - keep only last 10000 entries
+            // Schedule periodic save to persistent storage
+            scheduleSave();
+            
+            // Limit memory usage - keep only last 10000 entries in memory
             if (csvLogEntries.length > 10000) {
-                csvLogEntries = csvLogEntries.slice(-5000); // Keep last 5000
+                csvLogEntries = csvLogEntries.slice(-5000); // Keep last 5000 in memory
+                // Save immediately when trimming to avoid data loss
+                saveCsvData();
             }
         }
         
@@ -193,6 +267,11 @@ module.exports = function(RED) {
         
         // Expose the exportToCsv function as a node method
         node.exportToCsv = exportToCsv;
+        
+        // Load existing CSV data from persistent storage on startup
+        if (node.enableCsvExport) {
+            loadCsvData();
+        }
         
         // Middleware to capture request body
         const bodyCapture = function(req, res, next) {
@@ -715,6 +794,16 @@ module.exports = function(RED) {
         // Handle node close
         this.on('close', function(removed, done) {
             node.status({});
+            
+            // Save any remaining CSV data before closing
+            if (node.enableCsvExport && csvLogEntries.length > 0) {
+                try {
+                    saveCsvData();
+                    node.log(`Saved ${csvLogEntries.length} CSV entries before shutdown`);
+                } catch (error) {
+                    node.warn(`Failed to save CSV data on shutdown: ${error.message}`);
+                }
+            }
             
             // Clean up any remaining request bodies
             requestBodies.clear();

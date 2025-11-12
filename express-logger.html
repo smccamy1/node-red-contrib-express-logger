@@ -16,7 +16,9 @@
             maxLogFileSize: { value: 10, validate: RED.validators.number() },
             logRotation: { value: true },
             enableCsvExport: { value: false },
-            csvExportPath: { value: "" }
+            csvExportPath: { value: "" },
+            csvDataFile: { value: "" },
+            maxPersistentEntries: { value: 50000, validate: RED.validators.number() }
         },
         inputs: 0,
         outputs: 1,
@@ -254,6 +256,20 @@
             <div style="font-size: 11px; color: #666; margin-top: 5px;">Directory for CSV exports (default: {userDir}/logs/exports)</div>
         </div>
         
+        <h5 style="margin: 15px 0 10px 0; color: #666;">Persistent Storage Settings</h5>
+        
+        <div class="form-row">
+            <label for="node-input-csvDataFile" style="width: 120px;"><i class="fa fa-database"></i> Data Storage File</label>
+            <input type="text" id="node-input-csvDataFile" placeholder="logs/express-logger-data.json" style="width: 300px;">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">File for persistent CSV data storage (survives Node-RED restarts)</div>
+        </div>
+        
+        <div class="form-row">
+            <label for="node-input-maxPersistentEntries" style="width: 120px;"><i class="fa fa-archive"></i> Max Stored Entries</label>
+            <input type="number" id="node-input-maxPersistentEntries" placeholder="50000" style="width: 100px;" min="1000" max="1000000">
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of log entries to keep in persistent storage (default: 50,000)</div>
+        </div>
+        
         <div class="form-row">
             <button type="button" id="export-csv-btn" class="red-ui-button" style="margin-top: 10px;">
                 <i class="fa fa-download"></i> Export Current Logs to CSV
@@ -328,6 +344,12 @@
         
         <dt>CSV Export Path <span class="property-type">string</span></dt>
         <dd>Directory path for CSV exports. Default: {userDir}/logs/exports/. Use the export button in configuration to manually export current logs.</dd>
+        
+        <dt>Data Storage File <span class="property-type">string</span></dt>
+        <dd>File path for persistent CSV data storage. Default: {userDir}/logs/express-logger-data.json. This file preserves log entries across Node-RED restarts.</dd>
+        
+        <dt>Max Stored Entries <span class="property-type">number</span></dt>
+        <dd>Maximum number of log entries to keep in persistent storage. Default: 50,000. Older entries are automatically removed to prevent excessive disk usage.</dd>
     </dl>
     
     <h3>File Logging Features</h3>
@@ -340,12 +362,15 @@
     </ul>
     
     <h3>CSV Export Features</h3>
-    <p>The CSV export functionality enables data analysis and sharing:</p>
+    <p>The CSV export functionality enables data analysis and sharing with persistent storage:</p>
     <ul>
         <li><strong>Structured Data Export</strong> - Exports structured log data in CSV format</li>
+        <li><strong>Persistent Storage</strong> - Log entries are automatically saved to disk and survive Node-RED restarts</li>
         <li><strong>Manual Export</strong> - Use the configuration panel button to export current logs</li>
+        <li><strong>Automatic Backup</strong> - Data is saved periodically and on Node-RED shutdown</li>
         <li><strong>Memory Management</strong> - Automatically limits stored entries to prevent memory issues</li>
         <li><strong>Proper Escaping</strong> - Handles commas, quotes, and newlines in data fields</li>
+        <li><strong>Configurable Retention</strong> - Control how many entries are kept in persistent storage</li>
         <li><strong>Timestamped Files</strong> - Export files include timestamps in filename</li>
     </ul>
     </dl>
