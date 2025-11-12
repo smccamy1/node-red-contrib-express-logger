@@ -127,7 +127,17 @@
                     console.log("Attempting public endpoint fallback");
                     const baseUrl = window.location.origin;
                     const httpRoot = RED.settings.httpNodeRoot || "";
-                    const publicUrl = baseUrl + httpRoot + "/express-logger-download/" + node.id;
+                    
+                    // Construct URL carefully to avoid double slashes
+                    let publicUrl = baseUrl;
+                    if (httpRoot && !httpRoot.startsWith('/')) {
+                        publicUrl += '/';
+                    }
+                    publicUrl += httpRoot;
+                    if (!publicUrl.endsWith('/')) {
+                        publicUrl += '/';
+                    }
+                    publicUrl += "express-logger-download/" + node.id;
                     
                     console.log("Public download URL:", publicUrl);
                     
