@@ -43,134 +43,129 @@
             // Initial state
             toggleCsvExportOptions();
             
-            // Initialize download button state
-            $("#download-csv-btn").hide();
-            
-            // CSV Export button handler
+            // CSV Export & Download button handler - Combined functionality
             $("#export-csv-btn").click(function() {
                 const button = $(this);
-                const downloadBtn = $("#download-csv-btn");
                 
                 button.prop('disabled', true);
-                button.html('<i class="fa fa-spinner fa-spin"></i> Exporting...');
+                button.html('<i class="fa fa-spinner fa-spin"></i> Checking CSV & Preparing Download...');
                 
                 // Send request to node to export CSV
                 $.ajax({
                     url: "express-logger/" + node.id + "/export-csv",
                     type: "POST",
                     success: function(data) {
-                        button.prop('disabled', false);
-                        button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
                         if (data.success) {
-                            RED.notify("CSV ready for download (" + data.recordCount + " entries)", "success");
+                            RED.notify("CSV ready (" + data.recordCount + " entries) - Download starting...", "success");
                             console.log("CSV file ready:", data);
                             
-                            // Enable and show download button
-                            downloadBtn.show();
-                            downloadBtn.prop('disabled', false);
-                            downloadBtn.data('filename', data.fileName);
-                            downloadBtn.find('.download-info').text(`${data.recordCount} entries (${Math.round(data.fileSize/1024)}KB)`);
+                            // Immediately trigger download
+                            button.html('<i class="fa fa-spinner fa-spin"></i> Starting Download...');
+                            startCsvDownload();
                         } else {
+                            button.prop('disabled', false);
+                            button.html('<i class="fa fa-download"></i> Export & Download CSV');
                             RED.notify("Export failed: " + (data.error || "Unknown error"), "error");
-                            downloadBtn.hide();
                         }
                     },
                     error: function() {
                         button.prop('disabled', false);
-                        button.html('<i class="fa fa-download"></i> Export Current Logs to CSV');
+                        button.html('<i class="fa fa-download"></i> Export & Download CSV');
                         RED.notify("Export request failed", "error");
-                        downloadBtn.hide();
                     }
                 });
-            });
-
-            // CSV Download button handler - Simplified for direct CSV file download
-            $("#download-csv-btn").click(function() {
-                const button = $(this);
-                let downloadAttempted = false;
                 
-                console.log("Starting CSV download");
-                
-                // Method 1: Try direct iframe download (works with auth)
-                const authUrl = "express-logger/" + node.id + "/download-csv";
-                console.log("Trying authenticated download:", authUrl);
-                
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = authUrl;
-                document.body.appendChild(iframe);
-                
-                // Clean up iframe after download
-                setTimeout(function() {
-                    if (iframe.parentNode) {
-                        document.body.removeChild(iframe);
-                    }
-                }, 3000);
-                
-                // Method 2: Fallback to public endpoint only if iframe hasn't worked
-                setTimeout(function() {
-                    // Check if the iframe approach might have failed by testing the auth endpoint
-                    if (!downloadAttempted) {
-                        fetch(authUrl, { method: 'HEAD' })
-                            .then(response => {
-                                if (!response.ok) {
-                                    // Auth failed, try public endpoint
-                                    console.log("Auth endpoint failed, attempting public endpoint fallback");
+                function startCsvDownload() {
+                    let downloadAttempted = false;
+                    
+                    console.log("Starting CSV download");
+                    
+                    // Method 1: Try direct iframe download (works with auth)
+                    const authUrl = "express-logger/" + node.id + "/download-csv";
+                    console.log("Trying authenticated download:", authUrl);
+                    
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = authUrl;
+                    document.body.appendChild(iframe);
+                    
+                    // Clean up iframe after download
+                    setTimeout(function() {
+                        if (iframe.parentNode) {
+                            document.body.removeChild(iframe);
+                        }
+                    }, 3000);
+                    
+                    // Method 2: Fallback to public endpoint only if iframe hasn't worked
+                    setTimeout(function() {
+                        // Check if the iframe approach might have failed by testing the auth endpoint
+                        if (!downloadAttempted) {
+                            fetch(authUrl, { method: 'HEAD' })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        // Auth failed, try public endpoint
+                                        console.log("Auth endpoint failed, attempting public endpoint fallback");
+                                        attemptPublicDownload();
+                                    } else {
+                                        console.log("Auth endpoint accessible, assuming download worked");
+                                    }
+                                })
+                                .catch(() => {
+                                    // Network error or auth failed, try public endpoint
+                                    console.log("Auth endpoint unreachable, attempting public endpoint fallback");
                                     attemptPublicDownload();
-                                } else {
-                                    console.log("Auth endpoint accessible, assuming download worked");
+                                });
+                        }
+                    }, 1500);
+                    
+                    function attemptPublicDownload() {
+                        if (downloadAttempted) return; // Prevent multiple attempts
+                        downloadAttempted = true;
+                        
+                        const baseUrl = window.location.origin;
+                        const httpRoot = RED.settings.httpNodeRoot || "";
+                        
+                        // Construct URL carefully to avoid double slashes
+                        let publicUrl = baseUrl;
+                        if (httpRoot && !httpRoot.startsWith('/')) {
+                            publicUrl += '/';
+                        }
+                        publicUrl += httpRoot;
+                        if (!publicUrl.endsWith('/')) {
+                            publicUrl += '/';
+                        }
+                        publicUrl += "express-logger-download/" + node.id;
+                        
+                        console.log("Public download URL:", publicUrl);
+                        
+                        // Try opening in new window/tab
+                        const newWindow = window.open(publicUrl, '_blank');
+                        
+                        // If popup blocked, create download link
+                        if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
+                            console.log("Popup blocked, using direct link");
+                            const link = document.createElement('a');
+                            link.href = publicUrl;
+                            link.download = 'express-logger.csv';
+                            link.target = '_blank';
+                            link.style.display = 'none';
+                            document.body.appendChild(link);
+                            link.click();
+                            setTimeout(function() {
+                                if (link.parentNode) {
+                                    document.body.removeChild(link);
                                 }
-                            })
-                            .catch(() => {
-                                // Network error or auth failed, try public endpoint
-                                console.log("Auth endpoint unreachable, attempting public endpoint fallback");
-                                attemptPublicDownload();
-                            });
+                            }, 100);
+                        }
                     }
-                }, 1500);
-                
-                function attemptPublicDownload() {
-                    if (downloadAttempted) return; // Prevent multiple attempts
-                    downloadAttempted = true;
                     
-                    const baseUrl = window.location.origin;
-                    const httpRoot = RED.settings.httpNodeRoot || "";
-                    
-                    // Construct URL carefully to avoid double slashes
-                    let publicUrl = baseUrl;
-                    if (httpRoot && !httpRoot.startsWith('/')) {
-                        publicUrl += '/';
-                    }
-                    publicUrl += httpRoot;
-                    if (!publicUrl.endsWith('/')) {
-                        publicUrl += '/';
-                    }
-                    publicUrl += "express-logger-download/" + node.id;
-                    
-                    console.log("Public download URL:", publicUrl);
-                    
-                    // Try opening in new window/tab
-                    const newWindow = window.open(publicUrl, '_blank');
-                    
-                    // If popup blocked, create download link
-                    if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
-                        console.log("Popup blocked, using direct link");
-                        const link = document.createElement('a');
-                        link.href = publicUrl;
-                        link.download = 'express-logger.csv';
-                        link.target = '_blank';
-                        link.style.display = 'none';
-                        document.body.appendChild(link);
-                        link.click();
-                        setTimeout(function() {
-                            if (link.parentNode) {
-                                document.body.removeChild(link);
-                            }
-                        }, 100);
-                    }
+                    // Reset button state after download attempt
+                    setTimeout(function() {
+                        button.prop('disabled', false);
+                        button.html('<i class="fa fa-download"></i> Export & Download CSV');
+                        RED.notify("Download completed", "success");
+                    }, 2000);
                 }
-                
-                RED.notify("Download started", "success");
             });
             
             // CSV Delete button handler
@@ -197,9 +192,6 @@
                         if (data.success) {
                             RED.notify("All CSV files deleted successfully (" + (data.deletedCount || 0) + " files removed)", "success");
                             console.log("CSV files deleted:", data);
-                            
-                            // Hide download button since files are deleted
-                            $("#download-csv-btn").hide();
                         } else {
                             RED.notify("Delete failed: " + (data.error || "Unknown error"), "error");
                         }
@@ -290,16 +282,9 @@
         
         <div class="form-row">
             <button type="button" id="export-csv-btn" class="red-ui-button" style="margin-top: 10px;">
-                <i class="fa fa-refresh"></i> Check CSV Status
+                <i class="fa fa-download"></i> Export & Download CSV
             </button>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Check current CSV file status and prepare for download</div>
-        </div>
-
-        <div class="form-row">
-            <button type="button" id="download-csv-btn" class="red-ui-button" style="margin-top: 10px; display: none;">
-                <i class="fa fa-cloud-download"></i> Download CSV: <span class="download-info"></span>
-            </button>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Download the current CSV log file</div>
+            <div style="font-size: 11px; color: #666; margin-top: 5px;">Check CSV status and download current log file</div>
         </div>
         
         <div class="form-row">
