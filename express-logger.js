@@ -25,7 +25,7 @@ module.exports = function(RED) {
         let requestBodies = new Map();
         
         // CSV file configuration for direct writing
-        const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'hasRefreshIndicators', 'connectionIssues'];
+        const csvHeaders = ['timestamp', 'method', 'url', 'statusCode', 'responseTime', 'ip', 'userAgent', 'isEditorRequest', 'isDashboardRequest', 'connectionIssues'];
         
         // Main CSV log file path (single continuous file)
         this.csvLogFile = config.csvLogFile || path.join(RED.settings.userDir, 'logs', 'node-red-http-logs.csv');
@@ -137,7 +137,6 @@ module.exports = function(RED) {
                     userAgent: (logData.userAgent || '').substring(0, 100), // Limit length
                     isEditorRequest: logData.isEditorRequest || false,
                     isDashboardRequest: logData.isDashboardRequest || false,
-                    hasRefreshIndicators: logData.hasRefreshIndicators || false,
                     connectionIssues: logData.connectionIssues || ''
                 };
                 
@@ -174,7 +173,6 @@ module.exports = function(RED) {
                 userAgent: 'Node-RED-System',
                 isEditorRequest: false,
                 isDashboardRequest: false,
-                hasRefreshIndicators: eventType.includes('FLOWS') || eventType.includes('NODE') || severity === 'warn' || severity === 'error',
                 connectionIssues: eventType.includes('CONNECTION') || eventType.includes('SERVER') ? eventDetails : ''
             };
             
@@ -613,7 +611,6 @@ module.exports = function(RED) {
                                             responseConnection: responseConnection,
                                             cacheControl: cacheControl,
                                             responseCacheControl: responseCacheControl,
-                                            hasRefreshIndicators: !!(cacheControl === 'no-cache' || pragma === 'no-cache' || res.statusCode >= 400),
                                             connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
                                         };
                                         
@@ -633,7 +630,6 @@ module.exports = function(RED) {
                                             timestamp: new Date().toISOString(),
                                             isEditorRequest: isEditorRequest,
                                             isDashboardRequest: isDashboardRequest,
-                                            hasRefreshIndicators: !!(cacheControl === 'no-cache' || pragma === 'no-cache' || res.statusCode >= 400),
                                             connectionIssues: (responseConnection && responseConnection.toLowerCase().includes('close')) ? 'connection-close' : ''
                                         };
                                         addToCsvLog(logData);
