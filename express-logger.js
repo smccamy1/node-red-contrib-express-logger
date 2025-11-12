@@ -16,15 +16,10 @@ module.exports = function(RED) {
         this.maxBodySize = parseInt(config.maxBodySize) || 1024;
         this.filterPaths = config.filterPaths ? config.filterPaths.split(',').map(p => p.trim()) : [];
         this.outputToFlow = config.outputToFlow || false;
-        this.saveToFile = config.saveToFile || false;
-        this.logFilePath = config.logFilePath || path.join(RED.settings.userDir, 'logs', 'express-logger.log');
         this.enableCsvExport = config.enableCsvExport || false;
         this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
-        this.maxLogFileSize = parseInt(config.maxLogFileSize) || 10; // MB
         this.maxCsvFileSize = parseInt(config.maxCsvFileSize) || 50; // MB
-        this.maxRotatedFiles = parseInt(config.maxRotatedFiles) || 5; // Default 5 old log files
         this.maxRotatedCsvFiles = parseInt(config.maxRotatedCsvFiles) || 10; // Default 10 old CSV files
-        this.logRotation = config.logRotation !== false; // Default true
         
         // Store original body for logging
         let requestBodies = new Map();
@@ -57,40 +52,6 @@ module.exports = function(RED) {
             }
         }
         
-        // File logging functions
-        function ensureLogDirectory(filePath) {
-            const dir = path.dirname(filePath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-        }
-        
-        function rotateLogFile(filePath) {
-            if (!fs.existsSync(filePath)) return;
-            
-            const stats = fs.statSync(filePath);
-            const fileSizeMB = stats.size / (1024 * 1024);
-            
-            if (fileSizeMB >= node.maxLogFileSize) {
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const ext = path.extname(filePath);
-                const basename = path.basename(filePath, ext);
-                const dirname = path.dirname(filePath);
-                const rotatedFile = path.join(dirname, `${basename}-${timestamp}${ext}`);
-                
-                try {
-                    fs.renameSync(filePath, rotatedFile);
-                    node.log(`Log file rotated: ${rotatedFile}`);
-                    
-                    // Clean up old rotated files if limit is set
-                    if (node.maxRotatedFiles > 0) {
-                        cleanupOldFiles(dirname, basename, ext, node.maxRotatedFiles);
-                    }
-                } catch (err) {
-                    node.error(`Failed to rotate log file: ${err.message}`);
-                }
-            }
-        }
         
         function cleanupOldFiles(directory, basename, extension, maxFiles) {
             try {
@@ -155,26 +116,6 @@ module.exports = function(RED) {
                 } catch (err) {
                     node.error(`Failed to rotate CSV file: ${err.message}`);
                 }
-            }
-        }
-        
-        function writeToLogFile(message) {
-            if (!node.saveToFile || !node.logFilePath) return;
-            
-            try {
-                const logFilePath = node.logFilePath;
-                ensureLogDirectory(logFilePath);
-                
-                if (node.logRotation) {
-                    rotateLogFile(logFilePath);
-                }
-                
-                const timestamp = new Date().toISOString();
-                const logEntry = `[${timestamp}] ${message}\n`;
-                
-                fs.appendFileSync(logFilePath, logEntry, 'utf8');
-            } catch (err) {
-                node.error(`Failed to write to log file: ${err.message}`);
             }
         }
         
@@ -528,26 +469,20 @@ module.exports = function(RED) {
                                     
                                     console.log("EXPRESS LOGGER (DIRECT):", logMessage);
                                     
-                                    // Write to log file if enabled
-                                    writeToLogFile(`DIRECT: ${logMessage}`);
-                                    
                                     // Log potential refresh triggers
                                     if (res.statusCode >= 400) {
                                         console.log("EXPRESS LOGGER: ERROR RESPONSE:", res.statusCode, req.url);
                                         node.warn(`Error response ${res.statusCode} for ${req.url} - may trigger refresh`);
-                                        writeToLogFile(`ERROR RESPONSE: ${res.statusCode} ${req.url} - may trigger refresh`);
                                     }
                                     
                                     if (responseConnection && responseConnection.toLowerCase().includes('close')) {
                                         console.log("EXPRESS LOGGER: RESPONSE FORCES CONNECTION CLOSE:", req.url);
                                         node.warn(`Response forces connection close: ${req.url}`);
-                                        writeToLogFile(`CONNECTION CLOSE FORCED: ${req.url}`);
                                     }
                                     
                                     if (isEditorRequest && res.statusCode === 200 && responseTime > 5000) {
                                         console.log("EXPRESS LOGGER: SLOW EDITOR RESPONSE:", responseTime + "ms", req.url);
                                         node.warn(`Slow editor response ${responseTime}ms for ${req.url} - may cause timeout refresh`);
-                                        writeToLogFile(`SLOW RESPONSE: ${responseTime}ms ${req.url} - may cause timeout refresh`);
                                     }
                                     
                                     if (node.outputToFlow && node.send) {

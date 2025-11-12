@@ -10,11 +10,6 @@
             maxBodySize: { value: 1024, validate: RED.validators.number() },
             filterPaths: { value: "" },
             outputToFlow: { value: false },
-            saveToFile: { value: false },
-            logFilePath: { value: "" },
-            maxLogFileSize: { value: 10, validate: RED.validators.number() },
-            logRotation: { value: true },
-            maxRotatedFiles: { value: 5, validate: RED.validators.number() },
             enableCsvExport: { value: false },
             csvLogFile: { value: "" },
             maxCsvFileSize: { value: 50, validate: RED.validators.number() },
@@ -32,16 +27,6 @@
         oneditprepare: function() {
             const node = this;
             
-            // Toggle file logging options visibility
-            function toggleFileLoggingOptions() {
-                const saveToFile = $("#node-input-saveToFile").is(':checked');
-                if (saveToFile) {
-                    $("#file-logging-options").show();
-                } else {
-                    $("#file-logging-options").hide();
-                }
-            }
-            
             // Toggle CSV export options visibility
             function toggleCsvExportOptions() {
                 const enableCsv = $("#node-input-enableCsvExport").is(':checked');
@@ -53,11 +38,9 @@
             }
             
             // Set up event handlers
-            $("#node-input-saveToFile").change(toggleFileLoggingOptions);
             $("#node-input-enableCsvExport").change(toggleCsvExportOptions);
             
             // Initial state
-            toggleFileLoggingOptions();
             toggleCsvExportOptions();
             
             // Initialize download button state
@@ -236,40 +219,6 @@
         <input type="checkbox" id="node-input-outputToFlow" style="display: inline-block; width: auto; vertical-align: top;">
         <div class="form-tips" style="margin-left: 20px; margin-top: 5px; color: #666; font-style: italic;">
             Enable this to send log data to the output. Connect a debug node to see the log messages.
-        </div>
-    </div>
-    
-    <hr style="margin: 15px 0;">
-    <h4 style="margin-bottom: 10px; color: #666;">File Logging</h4>
-    
-    <div class="form-row">
-        <label for="node-input-saveToFile"><i class="fa fa-file-text"></i> Save to File</label>
-        <input type="checkbox" id="node-input-saveToFile" style="display:inline-block; width:auto; vertical-align:top;">
-    </div>
-    
-    <div class="form-row" id="file-logging-options" style="margin-left: 20px;">
-        <div class="form-row">
-            <label for="node-input-logFilePath" style="width: 120px;"><i class="fa fa-folder"></i> Log File Path</label>
-            <input type="text" id="node-input-logFilePath" placeholder="logs/express-logger.log" style="width: 300px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Default: {userDir}/logs/express-logger.log</div>
-        </div>
-        
-        <div class="form-row">
-            <label for="node-input-maxLogFileSize" style="width: 120px;"><i class="fa fa-database"></i> Max File Size (MB)</label>
-            <input type="number" id="node-input-maxLogFileSize" placeholder="10" min="1" max="1000" style="width: 100px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Rotate log when file exceeds this size</div>
-        </div>
-        
-        <div class="form-row">
-            <label for="node-input-logRotation" style="width: 120px;"><i class="fa fa-refresh"></i> Log Rotation</label>
-            <input type="checkbox" id="node-input-logRotation" style="display:inline-block; width:auto; vertical-align:top;" checked>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Enable automatic log file rotation</div>
-        </div>
-        
-        <div class="form-row">
-            <label for="node-input-maxRotatedFiles" style="width: 120px;"><i class="fa fa-archive"></i> Max Rotated Files</label>
-            <input type="number" id="node-input-maxRotatedFiles" placeholder="5" min="0" max="50" style="width: 100px;">
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Maximum number of old log files to keep (0 = unlimited)</div>
         </div>
     </div>
     
