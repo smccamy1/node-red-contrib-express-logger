@@ -15,7 +15,6 @@ module.exports = function(RED) {
         this.includeBody = config.includeBody || false;
         this.maxBodySize = parseInt(config.maxBodySize) || 1024;
         this.filterPaths = config.filterPaths ? config.filterPaths.split(',').map(p => p.trim()) : [];
-        this.outputToDebug = config.outputToDebug !== false; // Default true
         this.outputToFlow = config.outputToFlow || false;
         this.saveToFile = config.saveToFile || false;
         this.logFilePath = config.logFilePath || path.join(RED.settings.userDir, 'logs', 'express-logger.log');
@@ -299,14 +298,6 @@ module.exports = function(RED) {
                 // Generate log message
                 const logMessage = formatLogMessage(req, res, responseTime);
                 
-                // Debug: force output to console
-                console.log("EXPRESS LOGGER:", logMessage);
-                
-                // Output to debug panel/console
-                if (node.outputToDebug) {
-                    node.log(logMessage);
-                }
-                
                 // Output to flow if enabled
                 if (node.outputToFlow && node.send) {
                     node.send({ payload: logData });
@@ -482,10 +473,6 @@ module.exports = function(RED) {
                                         writeToLogFile(`SLOW RESPONSE: ${responseTime}ms ${req.url} - may cause timeout refresh`);
                                     }
                                     
-                                    if (node.outputToDebug) {
-                                        node.log(logMessage);
-                                    }
-                                    
                                     if (node.outputToFlow && node.send) {
                                         const logData = {
                                             method: req.method,
@@ -565,9 +552,6 @@ module.exports = function(RED) {
                                             const logMessage = formatLogMessage(req, res, responseTime);
                                             console.log("EXPRESS LOGGER (PROCESS):", logMessage);
                                             
-                                            if (node.outputToDebug) {
-                                                node.log(logMessage);
-                                            }
                                         } catch (err) {
                                             console.error("EXPRESS LOGGER PROCESS ERROR:", err);
                                         }
@@ -653,9 +637,6 @@ module.exports = function(RED) {
                                         node.warn(`Authentication failure ${res.statusCode} on ${req.url} - may trigger refresh`);
                                     }
                                     
-                                    if (node.outputToDebug) {
-                                        node.log(logMessage);
-                                    }
                                 } catch (err) {
                                     console.error("EXPRESS LOGGER EXPRESS ERROR:", err);
                                 }

@@ -9,7 +9,6 @@
             includeBody: { value: false },
             maxBodySize: { value: 1024, validate: RED.validators.number() },
             filterPaths: { value: "" },
-            outputToDebug: { value: true },
             outputToFlow: { value: false },
             saveToFile: { value: false },
             logFilePath: { value: "" },
@@ -207,13 +206,11 @@
     </div>
     
     <div class="form-row">
-        <label for="node-input-outputToDebug"><i class="fa fa-bug"></i> Output to Debug Panel</label>
-        <input type="checkbox" id="node-input-outputToDebug" style="display: inline-block; width: auto; vertical-align: top;">
-    </div>
-    
-    <div class="form-row">
         <label for="node-input-outputToFlow"><i class="fa fa-arrow-right"></i> Output to Flow</label>
         <input type="checkbox" id="node-input-outputToFlow" style="display: inline-block; width: auto; vertical-align: top;">
+        <div class="form-tips" style="margin-left: 20px; margin-top: 5px; color: #666; font-style: italic;">
+            Enable this to send log data to the output. Connect a debug node to see the log messages.
+        </div>
     </div>
     
     <hr style="margin: 15px 0;">
