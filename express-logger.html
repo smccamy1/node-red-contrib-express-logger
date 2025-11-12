@@ -4,10 +4,6 @@
         color: '#a6bbcf',
         defaults: {
             name: { value: "" },
-            logLevel: { value: "combined" },
-            includeHeaders: { value: false },
-            includeBody: { value: false },
-            maxBodySize: { value: 1024, validate: RED.validators.number() },
             filterPaths: { value: "" },
             enableCsvExport: { value: false },
             csvLogFile: { value: "" },
@@ -212,35 +208,11 @@
     </div>
     
     <div class="form-row">
-        <label for="node-input-logLevel"><i class="fa fa-list"></i> Log Format</label>
-        <select id="node-input-logLevel">
-            <option value="combined">Combined (Apache combined log format)</option>
-            <option value="common">Common (Apache common log format)</option>
-            <option value="dev">Dev (Concise colored output for development)</option>
-            <option value="short">Short</option>
-            <option value="tiny">Tiny</option>
-            <option value="custom">Custom (Detailed Node-RED format)</option>
-        </select>
-    </div>
-    
-    <div class="form-row">
-        <label for="node-input-includeHeaders"><i class="fa fa-header"></i> Include Headers</label>
-        <input type="checkbox" id="node-input-includeHeaders" style="display: inline-block; width: auto; vertical-align: top;">
-    </div>
-    
-    <div class="form-row">
-        <label for="node-input-includeBody"><i class="fa fa-file-text-o"></i> Include Request Body</label>
-        <input type="checkbox" id="node-input-includeBody" style="display: inline-block; width: auto; vertical-align: top;">
-    </div>
-    
-    <div class="form-row">
-        <label for="node-input-maxBodySize"><i class="fa fa-database"></i> Max Body Size (bytes)</label>
-        <input type="number" id="node-input-maxBodySize" placeholder="1024">
-    </div>
-    
-    <div class="form-row">
         <label for="node-input-filterPaths"><i class="fa fa-filter"></i> Filter Paths</label>
         <input type="text" id="node-input-filterPaths" placeholder="e.g., /debug,/settings (comma-separated)">
+        <div class="form-tips" style="margin-left: 20px; margin-top: 5px; color: #666; font-style: italic;">
+            Exclude specific paths from being logged to CSV
+        </div>
     </div>
     
     <hr style="margin: 15px 0;">
@@ -300,23 +272,8 @@
     
     <h3>Configuration</h3>
     <dl class="message-properties">
-        <dt>Log Format <span class="property-type">string</span></dt>
-        <dd>The format for logging HTTP requests. Choose from standard formats or custom detailed logging.</dd>
-        
-        <dt>Include Headers <span class="property-type">boolean</span></dt>
-        <dd>Whether to include HTTP headers in the log output.</dd>
-        
-        <dt>Include Request Body <span class="property-type">boolean</span></dt>
-        <dd>Whether to include the request body in the log output (useful for POST/PUT requests).</dd>
-        
-        <dt>Max Body Size <span class="property-type">number</span></dt>
-        <dd>Maximum size in bytes of the request body to log (prevents large payloads from flooding logs).</dd>
-        
         <dt>Filter Paths <span class="property-type">string</span></dt>
         <dd>Comma-separated list of URL paths to exclude from logging (e.g., static assets, health checks).</dd>
-        
-        <dt>Output to Debug Panel <span class="property-type">boolean</span></dt>
-        <dd>Send log messages to the Node-RED debug panel.</dd>
         
         <dt>Save to File <span class="property-type">boolean</span></dt>
         <dd>Whether to save log messages to a file on disk for persistent storage.</dd>

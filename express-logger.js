@@ -10,10 +10,6 @@ module.exports = function(RED) {
         const path = require('path');
         
         // Configuration
-        this.logLevel = config.logLevel || 'combined';
-        this.includeHeaders = config.includeHeaders || false;
-        this.includeBody = config.includeBody || false;
-        this.maxBodySize = parseInt(config.maxBodySize) || 1024;
         this.filterPaths = config.filterPaths ? config.filterPaths.split(',').map(p => p.trim()) : [];
         this.enableCsvExport = config.enableCsvExport || false;
         this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
