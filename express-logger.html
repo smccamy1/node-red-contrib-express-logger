@@ -172,6 +172,45 @@
                 
                 RED.notify("Download started", "success");
             });
+            
+            // CSV Delete button handler
+            $("#delete-csv-btn").click(function() {
+                const button = $(this);
+                
+                // Show confirmation dialog
+                const confirmMessage = "Are you sure you want to delete ALL CSV files?\n\nThis will permanently remove:\n- Current CSV log file\n- All rotated CSV files\n\nThis action cannot be undone.";
+                
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
+                button.prop('disabled', true);
+                button.html('<i class="fa fa-spinner fa-spin"></i> Deleting...');
+                
+                // Send request to node to delete CSV files
+                $.ajax({
+                    url: "express-logger/" + node.id + "/delete-csv",
+                    type: "POST",
+                    success: function(data) {
+                        button.prop('disabled', false);
+                        button.html('<i class="fa fa-trash"></i> Delete All CSV Files');
+                        if (data.success) {
+                            RED.notify("All CSV files deleted successfully (" + (data.deletedCount || 0) + " files removed)", "success");
+                            console.log("CSV files deleted:", data);
+                            
+                            // Hide download button since files are deleted
+                            $("#download-csv-btn").hide();
+                        } else {
+                            RED.notify("Delete failed: " + (data.error || "Unknown error"), "error");
+                        }
+                    },
+                    error: function() {
+                        button.prop('disabled', false);
+                        button.html('<i class="fa fa-trash"></i> Delete All CSV Files');
+                        RED.notify("Delete request failed", "error");
+                    }
+                });
+            });
         }
     });
 </script>
@@ -261,6 +300,13 @@
                 <i class="fa fa-cloud-download"></i> Download CSV: <span class="download-info"></span>
             </button>
             <div style="font-size: 11px; color: #666; margin-top: 5px;">Download the current CSV log file</div>
+        </div>
+        
+        <div class="form-row">
+            <button type="button" id="delete-csv-btn" class="red-ui-button red-ui-button-small" style="margin-top: 10px; background-color: #d9534f; border-color: #d43f3a;">
+                <i class="fa fa-trash"></i> Delete All CSV Files
+            </button>
+            <div style="font-size: 11px; color: #666; margin-top: 5px; color: #d9534f;">⚠️ Permanently removes current and rotated CSV files</div>
         </div>
     </div>
 </script>

@@ -221,6 +221,67 @@ module.exports = function(RED) {
             }
         }
         
+        function deleteCsvFiles() {
+            if (!node.enableCsvExport) {
+                return { success: false, error: "CSV export not enabled" };
+            }
+            
+            try {
+                let deletedCount = 0;
+                const dirname = path.dirname(node.csvLogFile);
+                const basename = path.basename(node.csvLogFile, path.extname(node.csvLogFile));
+                const extension = path.extname(node.csvLogFile);
+                
+                // Delete the main CSV file if it exists
+                if (fs.existsSync(node.csvLogFile)) {
+                    fs.unlinkSync(node.csvLogFile);
+                    deletedCount++;
+                    node.log(`Deleted main CSV file: ${node.csvLogFile}`);
+                }
+                
+                // Find and delete all rotated CSV files
+                try {
+                    const files = fs.readdirSync(dirname);
+                    const rotatedFiles = files.filter(file => {
+                        // Match pattern: basename-YYYY-MM-DDTHH-mm-ss-sssZ.ext
+                        const pattern = new RegExp(`^${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z${extension.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+                        return pattern.test(file);
+                    });
+                    
+                    rotatedFiles.forEach(file => {
+                        try {
+                            const filePath = path.join(dirname, file);
+                            fs.unlinkSync(filePath);
+                            deletedCount++;
+                            node.log(`Deleted rotated CSV file: ${file}`);
+                        } catch (err) {
+                            node.warn(`Failed to delete rotated file ${file}: ${err.message}`);
+                        }
+                    });
+                } catch (err) {
+                    node.warn(`Failed to scan directory for rotated files: ${err.message}`);
+                }
+                
+                // Log the deletion event to CSV if we recreate the file
+                if (deletedCount > 0) {
+                    // Reinitialize CSV file (creates new file with headers)
+                    initializeCsvFile();
+                    // Log the deletion event
+                    logSystemEventToCsv('CSV-FILES-DELETED', `${deletedCount} files removed by user`, 'info');
+                }
+                
+                node.log(`CSV deletion completed: ${deletedCount} files removed`);
+                return { 
+                    success: true, 
+                    deletedCount: deletedCount,
+                    message: `Successfully deleted ${deletedCount} CSV file(s)`
+                };
+            } catch (err) {
+                node.error(`Failed to delete CSV files: ${err.message}`);
+                return { success: false, error: err.message };
+            }
+        }
+        
         // Format log message based on log level
         function formatLogMessage(req, res, responseTime) {
             const timestamp = new Date().toISOString();
@@ -261,6 +322,9 @@ module.exports = function(RED) {
         
         // Expose the exportToCsv function as a node method
         node.exportToCsv = exportToCsv;
+        
+        // Expose the deleteCsvFiles function as a node method
+        node.deleteCsvFiles = deleteCsvFiles;
         
         // Initialize CSV file on startup
         if (node.enableCsvExport) {
@@ -856,6 +920,29 @@ module.exports = function(RED) {
                     filePath: result.filePath, 
                     fileName: result.fileName,
                     recordCount: result.recordCount 
+                });
+            } else {
+                res.json({ success: false, error: result.error });
+            }
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+    
+    // HTTP endpoint for CSV deletion
+    RED.httpAdmin.post("/express-logger/:id/delete-csv", RED.auth.needsPermission('express-logger.write'), function(req, res) {
+        const node = RED.nodes.getNode(req.params.id);
+        if (!node) {
+            return res.status(404).json({ success: false, error: "Node not found" });
+        }
+        
+        try {
+            const result = node.deleteCsvFiles();
+            if (result.success) {
+                res.json({ 
+                    success: true, 
+                    deletedCount: result.deletedCount,
+                    message: result.message
                 });
             } else {
                 res.json({ success: false, error: result.error });
