@@ -160,6 +160,27 @@ module.exports = function(RED) {
             }
         }
         
+        // Helper function to log Node-RED system events to CSV
+        function logSystemEventToCsv(eventType, eventDetails, severity = 'info') {
+            if (!node.enableCsvExport) return;
+            
+            const logData = {
+                timestamp: new Date().toISOString(),
+                method: 'SYSTEM',
+                url: eventType,
+                statusCode: severity === 'error' ? 500 : severity === 'warn' ? 300 : 200,
+                responseTime: '',
+                ip: 'localhost',
+                userAgent: 'Node-RED-System',
+                isEditorRequest: false,
+                isDashboardRequest: false,
+                hasRefreshIndicators: eventType.includes('FLOWS') || eventType.includes('NODE') || severity === 'warn' || severity === 'error',
+                connectionIssues: eventType.includes('CONNECTION') || eventType.includes('SERVER') ? eventDetails : ''
+            };
+            
+            addToCsvLog(logData);
+        }
+        
         function exportToCsv() {
             if (!node.enableCsvExport) {
                 return { success: false, error: "CSV export not enabled" };
@@ -244,6 +265,9 @@ module.exports = function(RED) {
         // Initialize CSV file on startup
         if (node.enableCsvExport) {
             initializeCsvFile();
+            
+            // Log node initialization to CSV for baseline tracking
+            logSystemEventToCsv('EXPRESS-LOGGER-INIT', `node-${node.id}-initialized`, 'info');
         }
         
         // Middleware to capture request body
@@ -366,6 +390,11 @@ module.exports = function(RED) {
                         if (event === 'close' || event === 'error' || event === 'connection' || event === 'clientError') {
                             console.log("EXPRESS LOGGER: SERVER EVENT:", event, args.length > 0 ? args[0]?.constructor?.name || 'data' : '');
                             node.log(`Server event: ${event} - ${args.length > 0 ? args[0]?.constructor?.name || 'data' : 'no data'}`);
+                            
+                            // Log server events to CSV
+                            const eventDetails = args.length > 0 ? (args[0]?.message || args[0]?.constructor?.name || 'event-occurred') : 'no-details';
+                            const severity = event === 'error' || event === 'clientError' ? 'error' : 'info';
+                            logSystemEventToCsv(`SERVER-${event.toUpperCase()}`, eventDetails, severity);
                         }
                         return originalEmit.apply(this, arguments);
                     };
@@ -375,19 +404,32 @@ module.exports = function(RED) {
                         console.log("EXPRESS LOGGER: NEW CONNECTION from", socket.remoteAddress);
                         node.log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
                         
+                        // Log new connection to CSV
+                        logSystemEventToCsv('NEW-CONNECTION', `from ${socket.remoteAddress}:${socket.remotePort}`, 'info');
+                        
                         socket.on('close', function(hadError) {
                             console.log("EXPRESS LOGGER: CONNECTION CLOSED", socket.remoteAddress, hadError ? 'with error' : 'normal');
                             node.log(`Connection closed ${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with error' : 'normal'}`);
+                            
+                            // Log connection close to CSV
+                            const severity = hadError ? 'warn' : 'info';
+                            logSystemEventToCsv('CONNECTION-CLOSED', `${socket.remoteAddress}:${socket.remotePort} ${hadError ? 'with-error' : 'normal'}`, severity);
                         });
                         
                         socket.on('error', function(err) {
                             console.log("EXPRESS LOGGER: CONNECTION ERROR", socket.remoteAddress, err.message);
                             node.log(`Connection error ${socket.remoteAddress}:${socket.remotePort} - ${err.message}`);
+                            
+                            // Log connection error to CSV
+                            logSystemEventToCsv('CONNECTION-ERROR', `${socket.remoteAddress}:${socket.remotePort} - ${err.message}`, 'error');
                         });
                         
                         socket.on('timeout', function() {
                             console.log("EXPRESS LOGGER: CONNECTION TIMEOUT", socket.remoteAddress);
                             node.log(`Connection timeout ${socket.remoteAddress}:${socket.remotePort}`);
+                            
+                            // Log connection timeout to CSV
+                            logSystemEventToCsv('CONNECTION-TIMEOUT', `${socket.remoteAddress}:${socket.remotePort}`, 'warn');
                         });
                     });
                     
@@ -395,12 +437,18 @@ module.exports = function(RED) {
                     RED.server.on('error', function(err) {
                         console.log("EXPRESS LOGGER: SERVER ERROR:", err.message);
                         node.error(`Server error: ${err.message}`);
+                        
+                        // Log server error to CSV
+                        logSystemEventToCsv('SERVER-ERROR', err.message, 'error');
                     });
                     
                     // Monitor server close events
                     RED.server.on('close', function() {
                         console.log("EXPRESS LOGGER: SERVER CLOSED");
                         node.warn("Server closed event detected");
+                        
+                        // Log server close to CSV
+                        logSystemEventToCsv('SERVER-CLOSED', 'server-shutdown-detected', 'warn');
                     });
                 }
                 
@@ -594,6 +642,10 @@ module.exports = function(RED) {
                                     if (topic === 'status' || topic === 'flows' || topic === 'runtime-state') {
                                         console.log("EXPRESS LOGGER: COMMS EVENT:", topic, typeof data);
                                         node.log(`Node-RED comms event: ${topic} - ${typeof data === 'object' ? JSON.stringify(data).substring(0, 100) : data}`);
+                                        
+                                        // Log comms events to CSV
+                                        const dataStr = typeof data === 'object' ? JSON.stringify(data).substring(0, 100) : String(data).substring(0, 100);
+                                        logSystemEventToCsv(`COMMS-${topic.toUpperCase()}`, `data: ${dataStr}`, 'info');
                                     }
                                     return originalPublish.call(this, topic, data, retain);
                                 };
@@ -607,6 +659,9 @@ module.exports = function(RED) {
                                     if (event === 'connection' || event === 'disconnect') {
                                         console.log("EXPRESS LOGGER: Socket.IO event:", event);
                                         node.log(`Socket.IO ${event} event`);
+                                        
+                                        // Log Socket.IO events to CSV
+                                        logSystemEventToCsv(`SOCKETIO-${event.toUpperCase()}`, 'websocket-event', 'info');
                                     }
                                     return originalOn.call(this, event, handler);
                                 };
@@ -677,28 +732,44 @@ module.exports = function(RED) {
                                 RED.events.on("flows:started", function() {
                                     console.log("EXPRESS LOGGER: FLOWS STARTED - may trigger browser refresh");
                                     node.warn("Flows started - may trigger browser refresh");
+                                    
+                                    // Log flows started to CSV
+                                    logSystemEventToCsv('FLOWS-STARTED', 'flows-deployment-completed', 'warn');
                                 });
                                 
                                 RED.events.on("flows:stopped", function() {
                                     console.log("EXPRESS LOGGER: FLOWS STOPPED - may trigger browser refresh");
                                     node.warn("Flows stopped - may trigger browser refresh");
+                                    
+                                    // Log flows stopped to CSV
+                                    logSystemEventToCsv('FLOWS-STOPPED', 'flows-shutdown-initiated', 'warn');
                                 });
                                 
                                 RED.events.on("runtime-event", function(event) {
                                     if (event.id === "node-red-version" || event.id === "runtime-state") {
                                         console.log("EXPRESS LOGGER: RUNTIME EVENT:", event.id, event.payload);
                                         node.log(`Runtime event: ${event.id} - ${JSON.stringify(event.payload).substring(0, 100)}`);
+                                        
+                                        // Log runtime event to CSV
+                                        const payload = JSON.stringify(event.payload).substring(0, 100);
+                                        logSystemEventToCsv(`RUNTIME-${event.id.toUpperCase()}`, payload, 'info');
                                     }
                                 });
                                 
                                 RED.events.on("registry:node-added", function(id) {
                                     console.log("EXPRESS LOGGER: NODE ADDED:", id, "- may trigger refresh");
                                     node.log(`Node added: ${id} - may trigger refresh`);
+                                    
+                                    // Log node addition to CSV
+                                    logSystemEventToCsv('NODE-ADDED', `node-type: ${id}`, 'warn');
                                 });
                                 
                                 RED.events.on("registry:node-removed", function(id) {
                                     console.log("EXPRESS LOGGER: NODE REMOVED:", id, "- may trigger refresh");
                                     node.log(`Node removed: ${id} - may trigger refresh`);
+                                    
+                                    // Log node removal to CSV
+                                    logSystemEventToCsv('NODE-REMOVED', `node-type: ${id}`, 'warn');
                                 });
                             }
                             
@@ -711,6 +782,15 @@ module.exports = function(RED) {
                                 if (heapUsedMB > 512) { // Alert if using more than 512MB
                                     console.log("EXPRESS LOGGER: HIGH MEMORY USAGE:", heapUsedMB + "MB used of", heapTotalMB + "MB total");
                                     node.warn(`High memory usage: ${heapUsedMB}MB used of ${heapTotalMB}MB total - may cause performance issues`);
+                                    
+                                    // Log high memory usage to CSV
+                                    logSystemEventToCsv('HIGH-MEMORY-USAGE', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'warn');
+                                }
+                                
+                                // Also log memory stats periodically for baseline tracking (every 10 checks = 5 minutes)
+                                monitorMemory.counter = (monitorMemory.counter || 0) + 1;
+                                if (monitorMemory.counter % 10 === 0) {
+                                    logSystemEventToCsv('MEMORY-STATS', `${heapUsedMB}MB used of ${heapTotalMB}MB total`, 'info');
                                 }
                             };
                             
