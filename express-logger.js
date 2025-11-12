@@ -21,6 +21,7 @@ module.exports = function(RED) {
         this.enableCsvExport = config.enableCsvExport || false;
         this.csvExportPath = config.csvExportPath || path.join(RED.settings.userDir, 'logs', 'exports');
         this.maxLogFileSize = parseInt(config.maxLogFileSize) || 10; // MB
+        this.maxCsvFileSize = parseInt(config.maxCsvFileSize) || 50; // MB
         this.logRotation = config.logRotation !== false; // Default true
         
         // Store original body for logging
@@ -84,6 +85,31 @@ module.exports = function(RED) {
             }
         }
         
+        function rotateCsvFile() {
+            if (!node.enableCsvExport || !fs.existsSync(node.csvLogFile)) return;
+            
+            const stats = fs.statSync(node.csvLogFile);
+            const fileSizeMB = stats.size / (1024 * 1024);
+            
+            if (fileSizeMB >= node.maxCsvFileSize) {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const ext = path.extname(node.csvLogFile);
+                const basename = path.basename(node.csvLogFile, ext);
+                const dirname = path.dirname(node.csvLogFile);
+                const rotatedFile = path.join(dirname, `${basename}-${timestamp}${ext}`);
+                
+                try {
+                    fs.renameSync(node.csvLogFile, rotatedFile);
+                    node.log(`CSV file rotated: ${rotatedFile} (${fileSizeMB.toFixed(2)}MB)`);
+                    
+                    // Recreate the CSV file with headers
+                    initializeCsvFile();
+                } catch (err) {
+                    node.error(`Failed to rotate CSV file: ${err.message}`);
+                }
+            }
+        }
+        
         function writeToLogFile(message) {
             if (!node.saveToFile || !node.logFilePath) return;
             
@@ -108,6 +134,9 @@ module.exports = function(RED) {
             if (!node.enableCsvExport) return;
             
             try {
+                // Check if CSV file needs rotation before adding new entry
+                rotateCsvFile();
+                
                 // Create CSV row data
                 const csvEntry = {
                     timestamp: logData.timestamp || new Date().toISOString(),
